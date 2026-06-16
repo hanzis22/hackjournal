@@ -1,0 +1,23 @@
+{
+  "name": "HackJournal - Security Researcher Platform",
+  "short_name": "HackJournal",
+  "description": "Zero-knowledge encryption database and collaborative workbench for cybersecurity writeups.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#05050A",
+  "theme_color": "#7F77DD",
+  "icons": [
+    {
+      "src": "/next.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/next.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

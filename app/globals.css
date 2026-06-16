@@ -1,0 +1,282 @@
+@import "tailwindcss";
+
+:root {
+  --bg:        #0d0d18;
+  --bg2:       #131328;
+  --bg3:       #1a1a35;
+  --purple-100:#CECBF6;
+  --purple-200:#AFA9EC;
+  --purple-400:#7F77DD;
+  --purple-600:#534AB7;
+  --purple-800:#3C3489;
+  --purple-900:#26215C;
+  --text:      #e8e6ff;
+  --text2:     #9b97cc;
+  --border:    rgba(127,119,221,0.2);
+  --border2:   rgba(127,119,221,0.4);
+  --green:     #39ff14;
+  --red:       #ff4560;
+  --amber:     #f0a500;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--purple-800); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--purple-600); }
+
+/* Editor styles */
+.ql-toolbar { background: var(--bg3) !important; border-color: var(--border) !important; border-radius: 8px 8px 0 0 !important; }
+.ql-container { background: var(--bg3) !important; border-color: var(--border) !important; border-radius: 0 0 8px 8px !important; color: var(--text) !important; font-size: 14px !important; min-height: 280px !important; }
+.ql-editor { color: var(--text) !important; min-height: 280px !important; line-height: 1.8 !important; }
+.ql-editor code { background: var(--bg2) !important; color: var(--green) !important; padding: 2px 6px; border-radius: 4px; font-family: 'Share Tech Mono', monospace !important; }
+.ql-editor pre { background: var(--bg2) !important; color: var(--green) !important; border-radius: 8px; padding: 12px 16px; }
+.ql-editor blockquote { border-left: 3px solid var(--purple-600) !important; padding: 8px 16px; background: rgba(83,74,183,0.08); border-radius: 0 6px 6px 0; }
+.ql-stroke { stroke: var(--text2) !important; }
+.ql-fill  { fill:  var(--text2) !important; }
+.ql-picker { color: var(--text2) !important; }
+.ql-picker-options { background: var(--bg2) !important; border-color: var(--border) !important; }
+.ql-picker-item { color: var(--text2) !important; }
+.ql-active .ql-stroke { stroke: var(--purple-400) !important; }
+.ql-active .ql-fill  { fill:  var(--purple-400) !important; }
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.cursor-blink { animation: blink 1s step-end infinite; }
+
+/* Writeup content styles */
+.writeup-content h1, .writeup-content h2, .writeup-content h3 { color: var(--purple-200); font-family: monospace; margin: 20px 0 8px; }
+.writeup-content h1 { font-size: 20px; }
+.writeup-content h2 { font-size: 17px; border-left: 3px solid var(--purple-600); padding-left: 12px; }
+.writeup-content h3 { font-size: 15px; }
+.writeup-content p  { margin-bottom: 12px; }
+.writeup-content code { font-family: monospace; background: var(--bg3); color: var(--green); padding: 2px 6px; border-radius: 4px; font-size: 13px; border: 1px solid var(--border); }
+.writeup-content pre { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; overflow-x: auto; }
+.writeup-content pre code { background: none; border: none; padding: 0; display: block; }
+.writeup-content ul, .writeup-content ol { margin: 8px 0 12px 22px; }
+.writeup-content li { margin: 4px 0; }
+.writeup-content strong { color: var(--purple-200); }
+.writeup-content blockquote { border-left: 3px solid var(--purple-600); padding: 8px 16px; margin: 12px 0; background: rgba(83,74,183,0.08); border-radius: 0 6px 6px 0; }
+.writeup-content a { color: var(--purple-400); }
+
+@media print {
+  /* Hide all elements except the pdf backdrop portal */
+  body > *:not(.pdf-backdrop) {
+    display: none !important;
+  }
+  
+  /* Reset HTML and body layout for natural printing */
+  html, body {
+    background: #ffffff !important;
+    color: #111111 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Style backdrop as a normal printable block wrapper */
+  .pdf-backdrop {
+    position: static !important;
+    background: #ffffff !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  
+  /* Render print container fully on all pages with light theme */
+  .pdf-print-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  /* Force light colors on elements inside print container */
+  .pdf-print-container * {
+    color: #111111 !important;
+    background: transparent !important;
+    border-color: #dddddd !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Custom header styling on print */
+  .pdf-print-container h1, 
+  .pdf-print-container h2, 
+  .pdf-print-container h3, 
+  .pdf-print-container strong {
+    color: #000000 !important;
+  }
+
+  .pdf-print-container h2 {
+    border-left: 3px solid #534ab7 !important;
+    padding-left: 12px !important;
+  }
+
+  /* Differentiate CVSS Severity Pill in Print */
+  .pdf-print-container [style*="sevColor"] {
+    background: #f3f4f6 !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+  }
+
+  /* Code blocks styling in print */
+  .pdf-print-container code {
+    font-family: monospace !important;
+    background: #f3f4f6 !important;
+    color: #d11141 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    border: 1px solid #e5e7eb !important;
+    font-size: 12px !important;
+  }
+
+  .pdf-print-container pre {
+    background: #f8f9fa !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+    margin: 12px 0 !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+  }
+
+  .pdf-print-container pre code {
+    background: none !important;
+    border: none !important;
+    color: #111111 !important;
+    padding: 0 !important;
+  }
+
+  .pdf-print-container blockquote {
+    border-left: 3px solid #534ab7 !important;
+    background: #f9fafb !important;
+    color: #4b5563 !important;
+  }
+
+  .pdf-print-container .pdf-attack-chain {
+    background: #f9fafb !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  .pdf-print-container .pdf-step-card {
+    border-color: currentColor !important;
+    background: #ffffff !important;
+  }
+
+  .pdf-print-container .pdf-step-card strong,
+  .pdf-print-container .pdf-step-card span {
+    color: #111111 !important;
+  }
+
+  /* Hide print buttons and extra info */
+  .pdf-actions, .no-print, .copy-code-btn {
+    display: none !important;
+  }
+
+  /* Page breaks configuration */
+  .pdf-print-container h1, 
+  .pdf-print-container h2, 
+  .pdf-print-container h3 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .pdf-print-container img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+
+/* Responsive Dashboard Layout */
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+
+.dashboard-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.dashboard-sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: transform 0.3s ease;
+  z-index: 90;
+}
+
+.dashboard-main {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.menu-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+  .dashboard-sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    box-shadow: 5px 0 15px rgba(0,0,0,0.5);
+  }
+  .dashboard-sidebar.open {
+    transform: translateX(0);
+  }
+  .sidebar-overlay {
+    display: block !important;
+    position: fixed;
+    inset: 52px 0 0 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 80;
+  }
+}
+
+
