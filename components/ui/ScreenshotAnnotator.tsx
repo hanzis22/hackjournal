@@ -12,11 +12,52 @@ type Tool = 'pen' | 'rect' | 'arrow' | 'text' | 'blur'
 export default function ScreenshotAnnotator({ onSave, onCancel, initialImage }: ScreenshotAnnotatorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null)
   
   const [currentTool, setCurrentTool] = useState<Tool>('rect')
   const [color, setColor] = useState('#ff003c')
   const [lineWidth, setLineWidth] = useState(3)
+  
+  const handleImageFile = (file: File) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const canvas = canvasRef.current
+      const context = canvas?.getContext('2d')
+      if (canvas && context) {
+        canvas.width = img.width
+        canvas.height = img.height
+        context.drawImage(img, 0, 0)
+        setBgImage(img)
+        setImageLoaded(true)
+      }
+      URL.revokeObjectURL(url)
+    }
+    img.src = url
+  }
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      handleImageFile(file)
+    }
+  }
+
+  const [textInput, setTextInput] = useState<{ x: number, y: number, canvasX: number, canvasY: number } | null>(null)
+  const [textValue, setTextValue] = useState('')
+
+  const commitText = () => {
+    if (!textInput || !ctx || !canvasRef.current) return
+    const text = textValue.trim()
+    if (text) {
+      ctx.font = `bold ${lineWidth * 6}px monospace`
+      ctx.fillStyle = color
+      ctx.fillText(text, textInput.canvasX, textInput.canvasY)
+    }
+    setTextInput(null)
+    setTextValue('')
+  }
   
   const [isDrawing, setIsDrawing] = useState(false)
   const [startPos, setStartPos] = useState({ x: 0, y: 0 })
@@ -172,6 +213,9 @@ export default function ScreenshotAnnotator({ onSave, onCancel, initialImage }: 
     
     if (currentTool === 'text') {
       const rect = canvasRef.current.getBoundingClientRect()
+      const containerRect = containerRef.current?.getBoundingClientRect()
+      if (!containerRect) return
+
       const clientX = 'changedTouches' in e ? e.changedTouches[0].clientX : (e as React.MouseEvent).clientX
       const clientY = 'changedTouches' in e ? e.changedTouches[0].clientY : (e as React.MouseEvent).clientY
       
@@ -181,11 +225,12 @@ export default function ScreenshotAnnotator({ onSave, onCancel, initialImage }: 
       const x = (clientX - rect.left) * scaleX
       const y = (clientY - rect.top) * scaleY
       
-      const text = window.prompt('Enter text:')
-      if (text) {
-        ctx.font = `bold ${lineWidth * 6}px monospace`
-        ctx.fillText(text, x, y)
-      }
+      setTextInput({
+        x: clientX - containerRect.left,
+        y: clientY - containerRect.top,
+        canvasX: x,
+        canvasY: y
+      })
     }
   }
 
@@ -221,6 +266,33 @@ export default function ScreenshotAnnotator({ onSave, onCancel, initialImage }: 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <span style={{ color: '#fff', fontWeight: 'bold', marginRight: '10px' }}>🖼️ ANNOTATOR</span>
           
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            style={{ 
+              padding: '6px 12px', 
+              background: 'rgba(127,119,221,0.1)', 
+              border: '1px solid var(--purple-600)', 
+              borderRadius: '6px', 
+              color: '#fff', 
+              cursor: 'pointer', 
+              fontSize: '11px',
+              fontWeight: 'bold',
+              marginRight: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            📂 Upload Image
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            accept="image/*" 
+            onChange={handleImageUpload} 
+            style={{ display: 'none' }} 
+          />
+
           <div style={{ display: 'flex', background: 'var(--bg3)', borderRadius: '6px', border: '1px solid var(--border)', overflow: 'hidden' }}>
             <button onClick={() => setCurrentTool('rect')} style={{ padding: '8px 12px', background: currentTool === 'rect' ? 'var(--purple-600)' : 'transparent', color: currentTool === 'rect' ? '#fff' : 'var(--text2)', border: 'none', cursor: 'pointer' }}>Rect</button>
             <button onClick={() => setCurrentTool('arrow')} style={{ padding: '8px 12px', background: currentTool === 'arrow' ? 'var(--purple-600)' : 'transparent', color: currentTool === 'arrow' ? '#fff' : 'var(--text2)', border: 'none', borderLeft: '1px solid var(--border)', cursor: 'pointer' }}>Arrow</button>
@@ -255,12 +327,28 @@ export default function ScreenshotAnnotator({ onSave, onCancel, initialImage }: 
       {/* Canvas Area */}
       <div 
         ref={containerRef}
-        style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', position: 'relative' }}
       >
         {!imageLoaded && !initialImage && (
-          <div style={{ position: 'absolute', color: 'var(--text2)', textAlign: 'center', pointerEvents: 'none' }}>
-            <p style={{ fontSize: '16px', color: '#fff', marginBottom: '8px' }}>Paste an image (Ctrl+V) to start</p>
-            <p style={{ fontSize: '12px' }}>or draw on the empty canvas</p>
+          <div style={{ position: 'absolute', color: 'var(--text2)', textAlign: 'center', zIndex: 10 }}>
+            <p style={{ fontSize: '15px', color: '#fff', marginBottom: '8px' }}>Paste an image (Ctrl+V) to start</p>
+            <p style={{ fontSize: '12px', marginBottom: '16px' }}>or draw on the empty canvas</p>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: '10px 20px',
+                background: '#7F77DD',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                fontSize: '12px',
+                boxShadow: '0 0 15px rgba(127,119,221,0.4)'
+              }}
+            >
+              📂 Select File / Upload Image
+            </button>
           </div>
         )}
         <canvas
@@ -279,6 +367,39 @@ export default function ScreenshotAnnotator({ onSave, onCancel, initialImage }: 
             objectFit: 'contain'
           }}
         />
+        {textInput && (
+          <input
+            type="text"
+            value={textValue}
+            onChange={e => setTextValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                commitText()
+              } else if (e.key === 'Escape') {
+                setTextInput(null)
+                setTextValue('')
+              }
+            }}
+            onBlur={commitText}
+            autoFocus
+            style={{
+              position: 'absolute',
+              left: `${textInput.x}px`,
+              top: `${textInput.y}px`,
+              background: 'rgba(7, 7, 16, 0.95)',
+              border: `2px solid ${color}`,
+              color: '#fff',
+              fontSize: `${lineWidth * 4 + 8}px`,
+              fontFamily: 'monospace',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              outline: 'none',
+              zIndex: 100,
+              transform: 'translateY(-50%)',
+              minWidth: '150px'
+            }}
+          />
+        )}
       </div>
     </div>
   )

@@ -27,19 +27,27 @@ export default function FeedPage() {
   const [comments, setComments] = useState<any[]>([])
   const [newComment, setNewComment] = useState('')
   const [lang, setLang] = useState<Lang>('id')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
 
   useEffect(() => {
     setLang(getCurrentLang())
-    fetchFeed()
   }, [])
 
-  const fetchFeed = async () => {
+  useEffect(() => {
+    fetchFeed(page)
+  }, [page])
+
+  const fetchFeed = async (currentPage = 1) => {
     setLoading(true)
     try {
-      const res = await fetch('/api/feed')
+      const res = await fetch(`/api/feed?page=${currentPage}&limit=10`)
       const data = await res.json()
       if (res.ok) {
         setWriteups(data.writeups || [])
+        if (data.pagination) {
+          setTotalPages(data.pagination.totalPages || 1)
+        }
       }
     } catch (err) {
       console.error(err)
@@ -124,13 +132,6 @@ export default function FeedPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div style={{ padding: '40px', color: 'var(--text2)', fontFamily: 'monospace' }}>
-        {getTranslation(lang, 'loading')}
-      </div>
-    )
-  }
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'monospace' }}>
@@ -143,7 +144,35 @@ export default function FeedPage() {
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
         {/* Left Side: List */}
         <div style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {writeups.length === 0 ? (
+          {loading ? (
+            [1, 2, 3].map(i => (
+              <div
+                key={i}
+                style={{
+                  background: 'var(--bg2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="skeleton-pulse" style={{ height: '16px', width: '60%' }} />
+                  <div className="skeleton-pulse" style={{ height: '12px', width: '20%' }} />
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div className="skeleton-pulse" style={{ height: '14px', width: '60px' }} />
+                  <div className="skeleton-pulse" style={{ height: '14px', width: '50px' }} />
+                </div>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div className="skeleton-pulse" style={{ height: '12px', width: '80px' }} />
+                  <div className="skeleton-pulse" style={{ height: '12px', width: '70px' }} />
+                </div>
+              </div>
+            ))
+          ) : writeups.length === 0 ? (
             <div style={{ padding: '40px', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center', color: 'var(--text2)' }}>
               No public writeups available yet.
             </div>
@@ -200,6 +229,47 @@ export default function FeedPage() {
                 </div>
               </div>
             ))
+          )}
+
+          {/* Feed Pagination */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '8px', marginTop: '8px' }}>
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: page === 1 ? 'var(--text2)' : '#fff',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  cursor: page === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                  fontFamily: 'monospace'
+                }}
+              >
+                ◄ Previous
+              </button>
+              <span style={{ fontSize: '12px', color: 'var(--text2)', fontFamily: 'monospace' }}>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: page === totalPages ? 'var(--text2)' : '#fff',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                  fontFamily: 'monospace'
+                }}
+              >
+                Next ►
+              </button>
+            </div>
           )}
         </div>
 

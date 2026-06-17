@@ -2,10 +2,13 @@ import jwt from 'jsonwebtoken'
 import { NextRequest } from 'next/server'
 
 const SECRET = process.env.JWT_SECRET
-if (!SECRET) {
-  console.warn('[AUTH] WARNING: JWT_SECRET environment variable is not set. Using fallback for development only.')
+if (!SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('[AUTH] FATAL: JWT_SECRET environment variable is not set in production!')
 }
-const JWT_KEY = SECRET || 'hackjournal_dev_fallback_change_me'
+if (!SECRET) {
+  console.warn('[AUTH] WARNING: JWT_SECRET not set. Using dev fallback — NOT safe for production.')
+}
+const JWT_KEY = SECRET || 'hackjournal_dev_only_' + Math.random().toString(36)
 
 export interface JWTPayload {
   id:       number

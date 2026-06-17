@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTokenFromRequest } from '@/lib/auth'
 import pool from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   const payload = getTokenFromRequest(req)
   if (!payload)
@@ -65,6 +67,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, id: result.insertId }, { status: 201 })
   } catch (err: any) {
     console.error('[POST VAULT ERROR]', err)
-    return NextResponse.json({ error: 'Failed to save vault entry' }, { status: 500 })
+    return NextResponse.json({ error: err.message || 'Failed to save vault entry' }, { status: 500 })
   }
 }

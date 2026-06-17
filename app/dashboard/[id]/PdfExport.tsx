@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { sanitizeHtml } from '@/lib/sanitize'
 
 interface Props {
   writeup: any
@@ -43,10 +44,11 @@ export default function PdfExport({ writeup, tags }: Props) {
   return (
     <>
       <button onClick={() => setOpen(true)}
+        aria-label="Ekspor Laporan ke PDF"
         style={{ padding:'7px 16px', borderRadius:'6px', border:'1px solid var(--border2)', background:'transparent', color:'var(--purple-200)', cursor:'pointer', fontFamily:'monospace', fontSize:'13px' }}>
         ↓ Export PDF
       </button>
-
+ 
       {open && mounted && createPortal(
         <div className="pdf-backdrop" 
              onClick={(e) => {
@@ -56,7 +58,7 @@ export default function PdfExport({ writeup, tags }: Props) {
              }}
              style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:300, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'14px' }}>
           {/* PDF doc */}
-          <div className="pdf-print-container" style={{ background:'#0f0f1e', width:'720px', maxWidth:'96vw', maxHeight:'78vh', borderRadius:'10px', overflow:'auto', border:'1px solid var(--purple-600)', boxShadow:'0 0 40px rgba(83,74,183,0.35)' }}>
+          <div className="pdf-print-container" style={{ background:'#0f0f1e', width:'100%', maxWidth:'720px', maxHeight:'78vh', borderRadius:'10px', overflow:'auto', border:'1px solid var(--purple-600)', boxShadow:'0 0 40px rgba(83,74,183,0.35)' }}>
             <div style={{ padding:'40px', fontFamily:'monospace' }}>
               {/* Header */}
               <div style={{ borderBottom:'2px solid var(--purple-600)', paddingBottom:'16px', marginBottom:'24px', display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
@@ -192,7 +194,7 @@ export default function PdfExport({ writeup, tags }: Props) {
                   </div>
                   <div
                     className="writeup-content"
-                    dangerouslySetInnerHTML={{ __html: writeup.content }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(writeup.content || '') }}
                     style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }}
                   />
                 </>
@@ -202,7 +204,7 @@ export default function PdfExport({ writeup, tags }: Props) {
                     <div style={{ borderLeft:'3px solid var(--purple-600)', paddingLeft:'10px', marginBottom:'8px' }}>
                       <span style={{ fontSize:'11px', color:'var(--purple-400)', fontWeight:'bold' }}>1. VULNERABILITY SUMMARY</span>
                     </div>
-                    <div className="writeup-content" dangerouslySetInnerHTML={{ __html: writeup.content }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
+                    <div className="writeup-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(writeup.content || '') }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
                   </div>
 
                   {writeup.cve_impact && (
@@ -210,7 +212,7 @@ export default function PdfExport({ writeup, tags }: Props) {
                       <div style={{ borderLeft:'3px solid var(--purple-600)', paddingLeft:'10px', marginBottom:'8px' }}>
                         <span style={{ fontSize:'11px', color:'var(--purple-400)', fontWeight:'bold' }}>2. TECHNICAL IMPACT ASSESSMENT</span>
                       </div>
-                      <div className="writeup-content" dangerouslySetInnerHTML={{ __html: writeup.cve_impact }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
+                      <div className="writeup-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(writeup.cve_impact || '') }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
                     </div>
                   )}
 
@@ -219,7 +221,7 @@ export default function PdfExport({ writeup, tags }: Props) {
                       <div style={{ borderLeft:'3px solid var(--purple-600)', paddingLeft:'10px', marginBottom:'8px' }}>
                         <span style={{ fontSize:'11px', color:'var(--purple-400)', fontWeight:'bold' }}>3. PROOF OF CONCEPT (PoC)</span>
                       </div>
-                      <div className="writeup-content" dangerouslySetInnerHTML={{ __html: writeup.cve_poc }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
+                      <div className="writeup-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(writeup.cve_poc || '') }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
                     </div>
                   )}
 
@@ -228,7 +230,7 @@ export default function PdfExport({ writeup, tags }: Props) {
                       <div style={{ borderLeft:'3px solid var(--purple-600)', paddingLeft:'10px', marginBottom:'8px' }}>
                         <span style={{ fontSize:'11px', color:'var(--purple-400)', fontWeight:'bold' }}>4. REMEDIATION & MITIGATION PLAN</span>
                       </div>
-                      <div className="writeup-content" dangerouslySetInnerHTML={{ __html: writeup.cve_remediation }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
+                      <div className="writeup-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(writeup.cve_remediation || '') }} style={{ fontSize:'13px', color:'var(--text2)', lineHeight:'1.85' }} />
                     </div>
                   )}
                 </div>
@@ -244,10 +246,12 @@ export default function PdfExport({ writeup, tags }: Props) {
           {/* Actions */}
           <div className="pdf-actions" style={{ display:'flex', gap:'10px' }}>
             <button onClick={() => setOpen(false)}
+              aria-label="Tutup pratinjau PDF"
               style={{ padding:'9px 20px', borderRadius:'6px', border:'1px solid var(--border)', background:'transparent', color:'var(--text2)', cursor:'pointer', fontFamily:'monospace', fontSize:'13px' }}>
               Tutup
             </button>
             <button onClick={handlePrint}
+              aria-label="Cetak atau simpan pratinjau ke PDF"
               style={{ padding:'9px 20px', borderRadius:'6px', border:'none', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'13px' }}>
               🖨 Print / Save PDF
             </button>

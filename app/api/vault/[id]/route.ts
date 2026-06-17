@@ -27,6 +27,6 @@ export async function DELETE(
     return NextResponse.json({ success: true, message: 'Vault entry deleted successfully' })
   } catch (err: any) {
     console.error('[DELETE VAULT ERROR]', err)
-    return NextResponse.json({ error: 'Failed to delete vault entry' }, { status: 500 })
+    return NextResponse.json({ error: err.message || 'Failed to delete vault entry' }, { status: 500 })
   }
 }

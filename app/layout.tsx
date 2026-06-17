@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import PWARegistration from '@/components/ui/PWARegistration'
+import ToastContainer from '@/components/ui/Toast'
 
 export const metadata: Metadata = {
   title: 'HackJournal — Cybersecurity Writeup',
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{ fontFamily: 'monospace, sans-serif' }}>
         <PWARegistration />
         {children}
+        <ToastContainer />
       </body>
     </html>
   )

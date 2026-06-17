@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTokenFromRequest } from '@/lib/auth'
 import pool from '@/lib/db'
 import { addXP } from '@/lib/gamification'
+import { sanitizeText, sanitizeHtml } from '@/lib/sanitize'
 
 export async function GET(req: NextRequest) {
   const payload = getTokenFromRequest(req)
@@ -32,15 +33,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Engagement name is required' }, { status: 400 })
     }
 
+    const sanitizedName = sanitizeText(name.trim())
+    const sanitizedClient = sanitizeText(client || '')
+    const sanitizedScope = sanitizeHtml(scope || '')
+    const sanitizedStatus = sanitizeText(status || 'scoping')
+
     const [result]: any = await pool.query(
       `INSERT INTO engagements (user_id, name, client, scope, status, start_date, end_date)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         payload.id,
-        name.trim(),
-        client || '',
-        scope || '',
-        status || 'scoping',
+        sanitizedName,
+        sanitizedClient,
+        sanitizedScope,
+        sanitizedStatus,
         start_date || null,
         end_date || null
       ]

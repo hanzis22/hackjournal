@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react'
 import { getTranslation, getCurrentLang, Lang } from '@/lib/i18n'
 import { encryptPayload, decryptPayload } from '@/lib/cryptoClient'
+import CustomModal from '@/components/ui/CustomModal'
+import { showToast } from '@/components/ui/Toast'
 
 interface VaultEntry {
   id: number
@@ -21,9 +23,8 @@ export default function VaultPage() {
   const [loading, setLoading] = useState(true)
   const [lang, setLang] = useState<Lang>('id')
   
-  // Decryption master key
-  const [masterKey, setMasterKey] = useState('')
-  const [hasEnteredKey, setHasEnteredKey] = useState(false)
+  // Password for new secret creation
+  const [decryptionPassword, setDecryptionPassword] = useState('')
 
   // Form state
   const [label, setLabel] = useState('')
@@ -34,21 +35,26 @@ export default function VaultPage() {
 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  
+  // Reusable modal state supporting prompts and confirmations
+  const [modalConfig, setModalConfig] = useState<{
+    type: 'prompt' | 'confirm'
+    title: string
+    message?: string
+    placeholder?: string
+    initialValue?: string
+    onConfirm: (value?: string) => void
+  } | null>(null)
 
   useEffect(() => {
     setLang(getCurrentLang())
-    const savedKey = sessionStorage.getItem('hj_encryption_key') || ''
-    if (savedKey) {
-      setMasterKey(savedKey)
-      setHasEnteredKey(true)
-    }
-    fetchVault()
+    fetchVault(true)
   }, [])
 
-  const fetchVault = async () => {
-    setLoading(true)
+  const fetchVault = async (showLoading = false) => {
+    if (showLoading) setLoading(true)
     try {
-      const res = await fetch('/api/vault')
+      const res = await fetch(`/api/vault?t=${Date.now()}`)
       const data = await res.json()
       if (res.ok) {
         setEntries(data.vault || [])
@@ -56,26 +62,19 @@ export default function VaultPage() {
     } catch (err) {
       console.error(err)
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
-  }
-
-  const handleUnlock = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!masterKey.trim()) return
-    sessionStorage.setItem('hj_encryption_key', masterKey)
-    setHasEnteredKey(true)
   }
 
   const handleAddSecret = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!label.trim() || !secretData.trim() || !masterKey.trim()) return
+    if (!label.trim() || !secretData.trim() || !decryptionPassword.trim()) return
 
     setError('')
     setSuccess('')
     try {
-      // Encrypt client-side
-      const encrypted = await encryptPayload(masterKey, secretData.trim())
+      // Encrypt client-side using the secret's custom decryption password
+      const encrypted = await encryptPayload(decryptionPassword, secretData.trim())
 
       const res = await fetch('/api/vault', {
         method: 'POST',
@@ -95,52 +94,86 @@ export default function VaultPage() {
       if (res.ok) {
         setLabel('')
         setSecretData('')
+        setDecryptionPassword('')
         setNotes('')
-        setSuccess('Secret saved and encrypted client-side successfully!')
+        setSuccess('Rahasia berhasil dienkripsi dan disimpan!')
         fetchVault()
       } else {
-        setError(data.error || 'Failed to save secret')
+        setError(data.error || 'Gagal menyimpan rahasia')
       }
     } catch (err: any) {
-      setError('Encryption failed: ' + err.message)
+      setError('Enkripsi gagal: ' + err.message)
     }
   }
 
-  const handleDecryptEntry = async (entry: VaultEntry) => {
-    if (!masterKey.trim()) return
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text)
+    showToast('Kredensial disalin ke clipboard!', 'success')
+  }
 
-    try {
-      const decrypted = await decryptPayload(
-        masterKey,
-        entry.encrypted_data,
-        entry.encryption_salt,
-        entry.encryption_iv
-      )
-      setEntries(prev => prev.map(e => {
-        if (e.id === entry.id) {
-          return { ...e, decryptedData: decrypted }
+  const handleHideEntry = (id: number) => {
+    setEntries(prev => prev.map(e => e.id === id ? { ...e, decryptedData: undefined } : e))
+  }
+
+  const triggerDecryptPrompt = (entry: VaultEntry) => {
+    setModalConfig({
+      type: 'prompt',
+      title: '🔑 Masukkan Password Dekripsi',
+      message: `Masukkan password khusus yang Anda buat untuk membuka rahasia "${entry.label}":`,
+      placeholder: 'Password dekripsi...',
+      onConfirm: async (password) => {
+        if (!password?.trim()) return
+        setModalConfig(null)
+        try {
+          const decrypted = await decryptPayload(
+            password.trim(),
+            entry.encrypted_data,
+            entry.encryption_salt,
+            entry.encryption_iv
+          )
+          setEntries(prev => prev.map(e => {
+            if (e.id === entry.id) {
+              return { ...e, decryptedData: decrypted }
+            }
+            return e
+          }))
+
+          // Auto-hide after 20 seconds
+          setTimeout(() => {
+            setEntries(prev => prev.map(e => {
+              if (e.id === entry.id && e.decryptedData === decrypted) {
+                return { ...e, decryptedData: undefined }
+              }
+              return e
+            }))
+          }, 20000)
+        } catch (err) {
+          showToast('Password salah! Gagal mendekripsi kredensial.', 'error')
         }
-        return e
-      }))
-    } catch (err) {
-      alert('Failed to decrypt. Check if your master key is correct.')
-    }
+      }
+    })
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this secret?')) return
-
-    try {
-      const res = await fetch(`/api/vault/${id}`, {
-        method: 'DELETE'
-      })
-      if (res.ok) {
-        setSuccess('Secret deleted successfully.')
-        fetchVault()
+    setModalConfig({
+      type: 'confirm',
+      title: '⚠️ Hapus Secret',
+      message: 'Apakah Anda yakin ingin menghapus secret ini dari vault?',
+      onConfirm: async () => {
+        setModalConfig(null)
+        try {
+          const res = await fetch(`/api/vault/${id}`, {
+            method: 'DELETE'
+          })
+          if (res.ok) {
+            setSuccess('Secret deleted successfully.')
+            fetchVault()
+          }
+        } catch (err) {
+          console.error(err)
+        }
       }
-    } catch (err) {
-      console.error(err)
-    }
+    })
   }
 
   if (loading) {
@@ -151,48 +184,12 @@ export default function VaultPage() {
     )
   }
 
-  if (!hasEnteredKey) {
-    return (
-      <div style={{ padding: '40px', maxWidth: '450px', margin: '100px auto', background: 'var(--bg2)', border: '1px solid #7F77DD', borderRadius: '12px', paddingBottom: '30px', fontFamily: 'monospace' }}>
-        <h3 style={{ margin: '0 0 16px 0', color: '#fff', fontSize: '18px', textAlign: 'center' }}>
-          🔐 Unlock Secure Vault
-        </h3>
-        <p style={{ fontSize: '11px', color: 'var(--text2)', marginBottom: '20px', textAlign: 'center', lineHeight: '1.5' }}>
-          Enter your decryption master key. All credentials in the vault are encrypted client-side (Zero-Knowledge) using AES-256-GCM.
-        </p>
-        <form onSubmit={handleUnlock} style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 20px' }}>
-          <input
-            type="password"
-            value={masterKey}
-            onChange={e => setMasterKey(e.target.value)}
-            placeholder="Decryption Master Key"
-            style={{ width: '100%', background: '#070710', border: '1px solid var(--border)', borderRadius: '6px', padding: '10px 14px', color: '#fff', outline: 'none', fontSize: '13px' }}
-            required
-          />
-          <button type="submit" style={{ background: '#7F77DD', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
-            Unlock Vault
-          </button>
-        </form>
-      </div>
-    )
-  }
-
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'monospace' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
         <h2 style={{ color: '#fff', margin: 0, fontSize: '20px' }}>
           🔐 {getTranslation(lang, 'vault')}
         </h2>
-        <button
-          onClick={() => {
-            sessionStorage.removeItem('hj_encryption_key')
-            setHasEnteredKey(false)
-            setMasterKey('')
-          }}
-          style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
-        >
-          Lock Vault
-        </button>
       </div>
 
       {error && (
@@ -230,6 +227,17 @@ export default function VaultPage() {
                   value={secretData}
                   onChange={e => setSecretData(e.target.value)}
                   placeholder="Secret key, password, or token"
+                  style={{ width: '100%', background: '#070710', border: '1px solid var(--border)', borderRadius: '4px', padding: '8px 12px', color: '#fff', fontSize: '12px' }}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text2)', marginBottom: '4px' }}>DECRYPTION PASSWORD</label>
+                <input
+                  type="password"
+                  value={decryptionPassword}
+                  onChange={e => setDecryptionPassword(e.target.value)}
+                  placeholder="Set custom password to decrypt this secret"
                   style={{ width: '100%', background: '#070710', border: '1px solid var(--border)', borderRadius: '4px', padding: '8px 12px', color: '#fff', fontSize: '12px' }}
                   required
                 />
@@ -318,23 +326,61 @@ export default function VaultPage() {
                   </p>
                 )}
 
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
                   {e.decryptedData ? (
-                    <div style={{
-                      flex: 1,
-                      background: '#070710',
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid #39FF14',
-                      color: '#39FF14',
-                      fontSize: '13px',
-                      fontFamily: 'monospace'
-                    }}>
-                      {e.decryptedData}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', flexWrap: 'wrap' }}>
+                      <div style={{
+                        flex: 1,
+                        background: '#070710',
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        border: '1px solid #39FF14',
+                        color: '#39FF14',
+                        fontSize: '13px',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        minWidth: '200px'
+                      }}>
+                        {e.decryptedData}
+                      </div>
+                      <button
+                        onClick={() => handleCopy(e.decryptedData!)}
+                        style={{
+                          background: 'rgba(57, 255, 20, 0.1)',
+                          border: '1px solid #39FF14',
+                          color: '#39FF14',
+                          borderRadius: '4px',
+                          padding: '6px 12px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        📋 Copy
+                      </button>
+                      <button
+                        onClick={() => handleHideEntry(e.id)}
+                        style={{
+                          background: 'rgba(255, 69, 96, 0.1)',
+                          border: '1px solid #FF4560',
+                          color: '#FF4560',
+                          borderRadius: '4px',
+                          padding: '6px 12px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        🔒 Hide
+                      </button>
                     </div>
                   ) : (
                     <button
-                      onClick={() => handleDecryptEntry(e)}
+                      onClick={() => triggerDecryptPrompt(e)}
                       style={{
                         background: 'rgba(127,119,221,0.1)',
                         border: '1px solid #7F77DD',
@@ -359,6 +405,17 @@ export default function VaultPage() {
           )}
         </div>
       </div>
+      {modalConfig && (
+        <CustomModal
+          type={modalConfig.type}
+          title={modalConfig.title}
+          message={modalConfig.message}
+          placeholder={modalConfig.placeholder}
+          initialValue={modalConfig.initialValue}
+          onConfirm={modalConfig.onConfirm}
+          onCancel={() => setModalConfig(null)}
+        />
+      )}
     </div>
   )
 }

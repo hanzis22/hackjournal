@@ -41,7 +41,8 @@ export default function NetworkDiagramTool({ initialData, onChange }: NetworkDia
   // Save to parent
   useEffect(() => {
     onChange(JSON.stringify(data))
-  }, [data, onChange])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
   const addNode = (type: DiagramNode['type']) => {
     const id = `node_${Date.now()}`

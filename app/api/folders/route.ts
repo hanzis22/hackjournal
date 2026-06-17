@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { getTokenFromRequest } from '@/lib/auth'
+import { sanitizeText } from '@/lib/sanitize'
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,14 +34,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Folder name is required' }, { status: 400 })
     }
 
+    const sanitizedName = sanitizeText(name)
+    const sanitizedColor = sanitizeText(color || '#7F77DD')
+    const sanitizedIcon = sanitizeText(icon || '📁')
+
     const [result]: any = await pool.query(
       'INSERT INTO folders (user_id, name, parent_id, color, icon, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
       [
         user.id,
-        name,
+        sanitizedName,
         parent_id !== undefined ? parent_id : null,
-        color || '#7F77DD',
-        icon || '📁',
+        sanitizedColor,
+        sanitizedIcon,
         sort_order || 0
       ]
     )
@@ -50,10 +55,10 @@ export async function POST(req: NextRequest) {
       folder: {
         id: result.insertId,
         user_id: user.id,
-        name,
+        name: sanitizedName,
         parent_id: parent_id || null,
-        color: color || '#7F77DD',
-        icon: icon || '📁',
+        color: sanitizedColor,
+        icon: sanitizedIcon,
         sort_order: sort_order || 0
       }
     }, { status: 201 })

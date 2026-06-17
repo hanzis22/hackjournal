@@ -1,12 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 import CustomModal from '@/components/ui/CustomModal'
+import { showToast } from '@/components/ui/Toast'
 
 export default function SettingsPage() {
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [statusMessage, setStatusMessage] = useState('')
   const [modalConfig, setModalConfig] = useState<{
     title: string
     message: string
@@ -68,7 +68,7 @@ export default function SettingsPage() {
         setHookName('')
         setHookUrl('')
         fetchWebhooks()
-        setStatusMessage('Webhook ditambahkan!')
+        showToast('Webhook ditambahkan!', 'success')
       }
     } catch (e) {
       console.error(e)
@@ -84,9 +84,8 @@ export default function SettingsPage() {
       })
       if (res.ok) {
         localStorage.setItem('hj_lang', language)
-        setStatusMessage('Pengaturan profil berhasil disimpan!')
+        showToast('Pengaturan profil berhasil disimpan!', 'success')
         setTimeout(() => {
-          setStatusMessage('')
           window.location.reload()
         }, 1000)
       }
@@ -96,15 +95,22 @@ export default function SettingsPage() {
   }
 
   const deleteWebhook = async (id: number) => {
-    try {
-      const res = await fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        fetchWebhooks()
-        setStatusMessage('Webhook dihapus!')
+    setModalConfig({
+      title: '⚠️ Hapus Webhook',
+      message: 'Apakah Anda yakin ingin menghapus webhook ini?',
+      onConfirm: async () => {
+        setModalConfig(null)
+        try {
+          const res = await fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
+          if (res.ok) {
+            fetchWebhooks()
+            showToast('Webhook dihapus!', 'success')
+          }
+        } catch (e) {
+          console.error(e)
+        }
       }
-    } catch (e) {
-      console.error(e)
-    }
+    })
   }
 
   async function generateKey() {
@@ -114,15 +120,14 @@ export default function SettingsPage() {
       const data = await res.json()
       if (data.api_key) {
         setApiKey(data.api_key)
-        setStatusMessage('API Key baru berhasil dibuat!')
+        showToast('API Key baru berhasil dibuat!', 'success')
       } else {
-        setStatusMessage('Gagal membuat API Key')
+        showToast('Gagal membuat API Key', 'error')
       }
     } catch {
-      setStatusMessage('Gagal membuat API Key')
+      showToast('Gagal membuat API Key', 'error')
     } finally {
       setLoading(false)
-      setTimeout(() => setStatusMessage(''), 3000)
     }
   }
 
@@ -138,15 +143,14 @@ export default function SettingsPage() {
           const data = await res.json()
           if (data.success) {
             setApiKey(null)
-            setStatusMessage('API Key berhasil dicabut!')
+            showToast('API Key berhasil dicabut!', 'success')
           } else {
-            setStatusMessage('Gagal mencabut API Key')
+            showToast('Gagal mencabut API Key', 'error')
           }
         } catch {
-          setStatusMessage('Gagal mencabut API Key')
+          showToast('Gagal mencabut API Key', 'error')
         } finally {
           setLoading(false)
-          setTimeout(() => setStatusMessage(''), 3000)
         }
       }
     })
@@ -213,12 +217,6 @@ if __name__ == "__main__":
       <h1 style={{ fontSize: '24px', color: 'var(--purple-400)', borderBottom: '2px solid var(--purple-600)', paddingBottom: '12px', marginBottom: '24px' }}>
         ⚙️ Dashboard Settings & Integrations
       </h1>
-
-      {statusMessage && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--purple-600)', padding: '10px 16px', borderRadius: '6px', marginBottom: '20px', color: 'var(--purple-200)' }}>
-          {statusMessage}
-        </div>
-      )}
 
       {/* API Key Panel */}
       <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '10px', padding: '24px', marginBottom: '30px' }}>

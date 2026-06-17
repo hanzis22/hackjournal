@@ -16,6 +16,7 @@ import VersionHistoryModal from './VersionHistoryModal'
 import PluginParsersModal from './PluginParsersModal'
 import NetworkDiagramTool from './NetworkDiagramTool'
 import AIAssistantModal from './AIAssistantModal'
+import EncryptionToggle from '../writeup/EncryptionToggle'
 
 interface Props {
   initial?: {
@@ -592,8 +593,16 @@ export default function WriteupForm({ initial }: Props) {
             setUploadingState(prev => ({ ...prev, content: true }))
             
             try {
-              const res = await fetch(dataUrl)
-              const blob = await res.blob()
+              // Convert dataURL to Blob directly without using fetch()
+              const parts = dataUrl.split(',')
+              const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png'
+              const bstr = atob(parts[1])
+              let n = bstr.length
+              const u8arr = new Uint8Array(n)
+              while (n--) {
+                u8arr[n] = bstr.charCodeAt(n)
+              }
+              const blob = new Blob([u8arr], { type: mime })
               const file = new File([blob], 'annotation.png', { type: 'image/png' })
               const formData = new FormData()
               formData.append('image', file)

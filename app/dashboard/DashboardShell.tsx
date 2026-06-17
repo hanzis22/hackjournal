@@ -42,6 +42,18 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [lang, setLang] = useState<Lang>('id')
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false)
+  const [writeupsSectionOpen, setWriteupsSectionOpen] = useState(true)
+
+  // Auto-collapse/expand based on route
+  useEffect(() => {
+    const isWriteupView = pathname === '/dashboard' || pathname === '/dashboard/new' || (pathname.startsWith('/dashboard/') && !['/dashboard/feed', '/dashboard/teams', '/dashboard/engagements', '/dashboard/achievements', '/dashboard/vault', '/dashboard/analytics', '/dashboard/settings'].some(p => pathname.startsWith(p)))
+    if (isWriteupView) {
+      setWriteupsSectionOpen(true)
+    } else {
+      setWriteupsSectionOpen(false)
+    }
+  }, [pathname])
 
   // Search & Filters State
   const [search, setSearch] = useState('')
@@ -66,6 +78,11 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     initialValue?: string
     onConfirm: (value?: string) => void
   } | null>(null)
+
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalWriteups, setTotalWriteups] = useState(0)
+  const limit = 10
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -137,10 +154,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         params.set('folder_id', selectedFolderId)
       }
 
+      params.set('page', String(page))
+      params.set('limit', String(limit))
+
       const res = await fetch(`/api/writeups?${params}`)
       if (res.ok) {
         const data = await res.json()
         setWriteups(data.writeups || [])
+        if (data.pagination) {
+          setTotalPages(data.pagination.totalPages || 1)
+          setTotalWriteups(data.pagination.total || 0)
+        }
       } else {
         setWriteups([])
       }
@@ -150,6 +174,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     } finally {
       setLoading(false)
     }
+  }, [debouncedSearch, filter, selectedFolderId, isRegex, startDate, endDate, selectedTags, sortBy, sortOrder, page])
+
+  useEffect(() => {
+    setPage(1)
   }, [debouncedSearch, filter, selectedFolderId, isRegex, startDate, endDate, selectedTags, sortBy, sortOrder])
 
   useEffect(() => {
@@ -258,9 +286,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   }
 
   async function logout() {
-    await fetch('/api/auth/login', { method: 'DELETE' })
-    router.push('/login')
-    router.refresh()
+    setModalConfig({
+      type: 'confirm',
+      title: '🚪 Logout',
+      message: 'Apakah Anda yakin ingin keluar dari akun?',
+      onConfirm: async () => {
+        setModalConfig(null)
+        await fetch('/api/auth/login', { method: 'DELETE' })
+        router.push('/login')
+        router.refresh()
+      }
+    })
   }
 
   const counts = {
@@ -278,6 +314,20 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     setSelectedTags(prev => 
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
     )
+  }
+
+  const getPageTitle = () => {
+    if (pathname === '/dashboard') return getTranslation(lang, 'writeups')
+    if (pathname.startsWith('/dashboard/feed')) return getTranslation(lang, 'feed')
+    if (pathname.startsWith('/dashboard/teams')) return getTranslation(lang, 'teams')
+    if (pathname.startsWith('/dashboard/engagements')) return getTranslation(lang, 'engagements')
+    if (pathname.startsWith('/dashboard/achievements')) return getTranslation(lang, 'achievements')
+    if (pathname.startsWith('/dashboard/vault')) return getTranslation(lang, 'vault')
+    if (pathname.startsWith('/dashboard/analytics')) return getTranslation(lang, 'dashboard')
+    if (pathname.startsWith('/dashboard/settings')) return getTranslation(lang, 'settings')
+    if (pathname.startsWith('/dashboard/new')) return getTranslation(lang, 'newWriteup')
+    if (pathname.split('/')[2]) return 'Detail Laporan'
+    return 'HackJournal'
   }
 
   return (
@@ -299,50 +349,53 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       )}
 
       {/* TOPBAR */}
-      <div style={{ height:'52px', background:sidebarBg, borderBottom:`1px solid ${borderColor}`, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 20px', flexShrink:0, position:'sticky', top:0, zIndex:100 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'10px', fontFamily:'monospace', fontSize:'18px', color:'var(--purple-400)' }}>
+      <div style={{ height:'56px', background:'rgba(19, 19, 40, 0.8)', backdropFilter:'blur(12px)', borderBottom:`1px solid ${borderColor}`, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 20px', flexShrink:0, position:'sticky', top:0, zIndex:100 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'12px', fontFamily:'monospace' }}>
           <button className="menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
             ☰
           </button>
-          <div style={{ width:'32px', height:'32px', background:'var(--purple-600)', borderRadius:'6px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', color:'#fff' }}>⬡</div>
-          <span className="no-print" style={{ display: 'flex' }}>Hack<span style={{ color:'var(--purple-200)' }}>Journal</span></span>
-          <span style={{ fontSize: '10px', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px', color: 'var(--text2)', marginLeft: '12px' }}>Ctrl + K Command Palette</span>
+          <div style={{ width:'32px', height:'32px', background:'linear-gradient(135deg, var(--purple-600), var(--purple-400))', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'18px', color:'#fff', fontWeight:'bold', boxShadow:'0 0 12px rgba(127,119,221,0.3)' }}>⬡</div>
+          <span className="no-print" style={{ display: 'flex', fontSize:'18px', fontWeight:'bold', letterSpacing:'0.5px' }}>Hack<span style={{ color:'var(--purple-400)' }}>Journal</span></span>
+          
+          <span style={{ display:'flex', alignItems:'center', color:'var(--border2)', margin:'0 8px', fontSize:'14px' }}>/</span>
+          <span style={{ fontSize:'13px', color:'var(--text)', fontWeight:'600' }}>{getPageTitle()}</span>
+
+          <span className="command-palette-pill" style={{ fontSize: '10px', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '20px', color: 'var(--text2)', marginLeft: '12px' }}>Ctrl + K</span>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-          <span style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'12px', color:'var(--text2)', fontFamily:'monospace' }}>
-            <span style={{ width:'7px', height:'7px', borderRadius:'50%', background:'var(--green)', display:'inline-block' }}></span>
-            {user?.username || '...'}
-          </span>
-          <Link href="/dashboard" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            📓 {getTranslation(lang, 'writeups')}
-          </Link>
-          <Link href="/dashboard/feed" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/feed' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/feed' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            🌐 {getTranslation(lang, 'feed')}
-          </Link>
-          <Link href="/dashboard/teams" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/teams' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/teams' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            👥 {getTranslation(lang, 'teams')}
-          </Link>
-          <Link href="/dashboard/engagements" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/engagements' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/engagements' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            📦 {getTranslation(lang, 'engagements')}
-          </Link>
-          <Link href="/dashboard/achievements" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/achievements' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/achievements' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            🏆 {getTranslation(lang, 'achievements')}
-          </Link>
-          <Link href="/dashboard/vault" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/vault' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/vault' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            🔐 {getTranslation(lang, 'vault')}
-          </Link>
-          <Link href="/dashboard/analytics" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/analytics' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/analytics' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text2)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            📊 {getTranslation(lang, 'dashboard')}
-          </Link>
-          <Link href="/dashboard/settings" style={{ padding:'6px 10px', borderRadius:'6px', border:pathname === '/dashboard/settings' ? '1px solid var(--purple-500)' : '1px solid var(--border)', background:pathname === '/dashboard/settings' ? 'rgba(127,119,221,0.1)' : 'transparent', color:'var(--text2)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'4px' }}>
-            ⚙ {getTranslation(lang, 'settings')}
-          </Link>
-          <Link href="/dashboard/new" style={{ padding:'6px 12px', borderRadius:'6px', border:'1px solid var(--border2)', background:'transparent', color:'var(--purple-200)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'6px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+          <Link href="/dashboard/new" style={{ padding:'6px 14px', borderRadius:'6px', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'6px', fontWeight:'600', transition:'all 0.2s', boxShadow:'0 2px 8px rgba(83,74,183,0.3)' }} className="btn-new-writeup">
             + {getTranslation(lang, 'newWriteup')}
           </Link>
-          <button onClick={logout} style={{ padding:'6px 12px', borderRadius:'6px', border:'1px solid rgba(255,69,96,0.3)', background:'transparent', color:'var(--red)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px' }}>
-            Logout
-          </button>
+          
+          {/* Profile Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setUserDropdownOpen(!userDropdownOpen)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', cursor: 'pointer', outline: 'none' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--purple-600)', border: '2px solid var(--border2)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s' }} className="avatar-hover">
+                {(user?.username || 'U').substring(0, 2).toUpperCase()}
+              </div>
+            </button>
+            {userDropdownOpen && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setUserDropdownOpen(false)} />
+                <div style={{ position: 'absolute', right: 0, marginTop: '8px', width: '220px', background: 'rgba(19, 19, 40, 0.95)', border: '1px solid var(--border2)', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', zIndex: 999, overflow: 'hidden', backdropFilter: 'blur(10px)' }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#fff' }}>@{user?.username}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text2)', marginTop: '2px', wordBreak: 'break-all' }}>{user?.email || 'user@hackjournal.local'}</span>
+                  </div>
+                  <div style={{ padding: '6px' }}>
+                    <Link href="/dashboard/settings" onClick={() => setUserDropdownOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', borderRadius: '6px', color: 'var(--text)', textDecoration: 'none', fontSize: '12px', transition: 'background 0.2s' }} className="dropdown-item">
+                      ⚙️ {getTranslation(lang, 'settings')}
+                    </Link>
+                  </div>
+                  <div style={{ padding: '6px', borderTop: '1px solid var(--border)' }}>
+                    <button onClick={() => { setUserDropdownOpen(false); logout(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', borderRadius: '6px', color: 'var(--red)', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '12px', transition: 'background 0.2s' }} className="dropdown-item-logout">
+                      🚪 Logout
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -355,252 +408,373 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         {/* SIDEBAR */}
         <div className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''}`} style={{ fontFamily: 'monospace' }}>
           
-          {/* Advanced Search & Filtering Box */}
-          <div style={{ padding:'12px', borderBottom: `1px solid ${borderColor}` }}>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari laporan..."
-                style={{ width:'100%', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'6px', padding:'7px 32px 7px 10px', color:'var(--text)', fontSize:'13px', outline:'none', fontFamily:'monospace' }}
-              />
-              <button 
-                type="button" 
-                onClick={() => setIsRegex(!isRegex)}
-                title="Gunakan regex search"
-                style={{
-                  position: 'absolute',
-                  right: '8px',
-                  background: isRegex ? 'var(--purple-600)' : 'transparent',
-                  border: 'none',
-                  color: isRegex ? '#fff' : 'var(--text2)',
-                  fontSize: '9px',
-                  fontWeight: 'bold',
-                  padding: '2px 4px',
-                  borderRadius: '3px',
-                  cursor: 'pointer'
-                }}
-              >
-                .*
-              </button>
+          {/* MAIN NAVIGATION */}
+          <div style={{ padding: '16px 12px 10px', borderBottom: `1px solid ${borderColor}` }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--purple-400)', letterSpacing: '0.5px', marginBottom: '8px', paddingLeft: '8px' }}>
+              🧭 MENU UTAMA
             </div>
-            
-            <button 
-              type="button"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              style={{
-                width: '100%',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--purple-300)',
-                fontSize: '11px',
-                textAlign: 'left',
-                padding: '6px 0 0 0',
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {[
+                { path: '/dashboard/feed', label: getTranslation(lang, 'feed'), icon: '🌐' },
+                { path: '/dashboard', label: getTranslation(lang, 'writeups'), icon: '📓', exact: true },
+                { path: '/dashboard/teams', label: getTranslation(lang, 'teams'), icon: '👥' },
+                { path: '/dashboard/engagements', label: getTranslation(lang, 'engagements'), icon: '📦' },
+                { path: '/dashboard/achievements', label: getTranslation(lang, 'achievements'), icon: '🏆' },
+                { path: '/dashboard/vault', label: getTranslation(lang, 'vault'), icon: '🔐' },
+                { path: '/dashboard/analytics', label: getTranslation(lang, 'dashboard'), icon: '📊' },
+              ].map(item => {
+                const isActive = item.exact ? pathname === item.path : (pathname.startsWith(item.path) && item.path !== '/dashboard')
+                return (
+                  <Link
+                    key={item.path}
+                    href={item.path}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      color: isActive ? '#fff' : 'var(--text2)',
+                      background: isActive ? 'rgba(127,119,221,0.12)' : 'transparent',
+                      borderLeft: isActive ? '3px solid var(--purple-500)' : '3px solid transparent',
+                      textDecoration: 'none',
+                      fontSize: '13px',
+                      fontFamily: 'monospace',
+                      transition: 'all 0.2s',
+                    }}
+                    className="sidebar-nav-item"
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* COLLAPSIBLE LAPORAN SAYA */}
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            <div 
+              onClick={() => setWriteupsSectionOpen(!writeupsSectionOpen)}
+              style={{ 
+                padding: '12px 20px', 
+                borderBottom: `1px solid ${borderColor}`, 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
                 cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
+                background: 'rgba(0,0,0,0.1)',
+                userSelect: 'none'
               }}
             >
-              <span>{showAdvancedFilters ? '▲ Sembunyikan Filter' : '▼ Tampilkan Filter'}</span>
-            </button>
-
-            {showAdvancedFilters && (
-              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                {/* Date Filter */}
-                <div>
-                  <div style={{ fontSize: '9px', color: 'var(--text2)', marginBottom: '3px' }}>RENTANG TANGGAL</div>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ width: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }} />
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ width: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }} />
-                  </div>
-                </div>
-
-                {/* Sort Order */}
-                <div>
-                  <div style={{ fontSize: '9px', color: 'var(--text2)', marginBottom: '3px' }}>URUTKAN BERDASARKAN</div>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ width: '65%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }}>
-                      <option value="created_at">Tanggal Dibuat</option>
-                      <option value="updated_at">Tanggal Diubah</option>
-                      <option value="title">Judul Laporan</option>
-                      <option value="difficulty">Difficulty</option>
-                      <option value="cve_cvss_score">Nilai CVSS</option>
-                    </select>
-                    <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} style={{ width: '35%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }}>
-                      <option value="DESC">DESC</option>
-                      <option value="ASC">ASC</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Tag Filters */}
-                {allUniqueTags.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '9px', color: 'var(--text2)', marginBottom: '3px' }}>FILTER TAGS</div>
-                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxHeight: '55px', overflowY: 'auto' }}>
-                      {allUniqueTags.map(tag => {
-                        const isSel = selectedTags.includes(tag)
-                        return (
-                          <span
-                            key={tag}
-                            onClick={() => toggleTagSelection(tag)}
-                            style={{
-                              fontSize: '9px',
-                              padding: '2px 6px',
-                              borderRadius: '3px',
-                              border: `1px solid ${isSel ? 'var(--purple-500)' : 'var(--border)'}`,
-                              background: isSel ? 'var(--purple-900)' : 'transparent',
-                              color: isSel ? '#fff' : 'var(--text2)',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {tag}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar Folder tree section */}
-          <div style={{ padding: '10px 12px 6px', borderBottom: `1px solid ${borderColor}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--purple-300)', letterSpacing: '0.5px' }}>📁 WORKSPACES / FOLDERS</span>
-              <button 
-                onClick={createFolder} 
-                style={{ background: 'transparent', border: 'none', color: 'var(--purple-200)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', padding: '0 4px' }}
-                title="Buat folder baru"
-              >
-                +
-              </button>
+              <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--purple-400)', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                📁 LAPORAN SAYA
+              </span>
+              <span style={{ fontSize: '10px', color: 'var(--text2)' }}>
+                {writeupsSectionOpen ? '▲' : '▼'}
+              </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '12px' }}>
-              <div 
-                onClick={() => setSelectedFolderId(null)}
-                style={{ 
-                  padding: '5px 8px', 
-                  borderRadius: '4px', 
-                  cursor: 'pointer', 
-                  background: selectedFolderId === null ? 'rgba(127,119,221,0.1)' : 'transparent',
-                  color: selectedFolderId === null ? '#fff' : 'var(--text2)'
-                }}
-              >
-                🗂️ Semua Laporan
-              </div>
-              <div 
-                onClick={() => setSelectedFolderId('starred')}
-                style={{ 
-                  padding: '5px 8px', 
-                  borderRadius: '4px', 
-                  cursor: 'pointer', 
-                  background: selectedFolderId === 'starred' ? 'rgba(127,119,221,0.1)' : 'transparent',
-                  color: selectedFolderId === 'starred' ? '#fff' : 'var(--text2)'
-                }}
-              >
-                ⭐ Favorit / Berbintang
-              </div>
-              <div 
-                onClick={() => setSelectedFolderId('unorganized')}
-                style={{ 
-                  padding: '5px 8px', 
-                  borderRadius: '4px', 
-                  cursor: 'pointer', 
-                  background: selectedFolderId === 'unorganized' ? 'rgba(127,119,221,0.1)' : 'transparent',
-                  color: selectedFolderId === 'unorganized' ? '#fff' : 'var(--text2)'
-                }}
-              >
-                📥 Tanpa Folder
-              </div>
-
-              {/* Folders List */}
-              {folders.map(f => (
-                <div 
-                  key={f.id}
-                  style={{ 
-                    padding: '5px 8px', 
-                    borderRadius: '4px', 
-                    cursor: 'pointer', 
-                    background: selectedFolderId === String(f.id) ? 'rgba(127,119,221,0.15)' : 'transparent',
-                    color: selectedFolderId === String(f.id) ? '#fff' : 'var(--text2)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}
-                  className="folder-item-row"
-                  onClick={() => setSelectedFolderId(String(f.id))}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ color: f.color }}>{f.icon}</span>
-                    <span>{f.name}</span>
-                  </span>
-                  <span className="folder-actions" style={{ display: 'none', gap: '6px' }}>
-                    <button onClick={(e) => { e.stopPropagation(); renameFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--text2)', fontSize:'10px', cursor:'pointer' }}>✏️</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--red)', fontSize:'10px', cursor:'pointer' }}>🗑️</button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Difficulty Quick Filter */}
-          <div style={{ padding:'10px 12px 8px', display:'flex', gap:'4px', flexWrap:'wrap', borderBottom:`1px solid ${borderColor}` }}>
-            {['all','Easy','Medium','Hard','Insane'].map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                style={{ padding:'2px 8px', borderRadius:'20px', fontSize:'10px', border:`1px solid ${filter===f ? 'var(--purple-600)' : 'var(--border)'}`, background: filter===f ? 'var(--purple-600)' : 'transparent', color: filter===f ? '#fff' : 'var(--text2)', cursor:'pointer', fontFamily:'monospace' }}>
-                {f === 'all' ? 'All' : f}
-              </button>
-            ))}
-          </div>
-
-          {/* Writeups List */}
-          <div style={{ flex:1, overflowY:'auto', padding:'6px 0' }}>
-            {loading ? (
-              <div style={{ padding:'20px', textAlign:'center', color:'var(--text2)', fontFamily:'monospace', fontSize:'12px' }}>// Loading...</div>
-            ) : writeups.length === 0 ? (
-              <div style={{ padding:'20px', textAlign:'center', color:'var(--text2)', fontFamily:'monospace', fontSize:'12px' }}>No writeups found</div>
-            ) : writeups.map(w => (
-              <Link key={w.id} href={`/dashboard/${w.id}`}
-                className={`sidebar-item ${String(w.id) === activeId ? 'active' : ''}`}
-                style={{ display:'block', textDecoration:'none', padding:'10px 14px', position: 'relative' }}>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                  <div className="title" style={{ fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', paddingRight: '12px' }}>{w.title}</div>
+            {writeupsSectionOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                {/* Advanced Search & Filtering Box */}
+                <div style={{ padding:'12px', borderBottom: `1px solid ${borderColor}` }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari laporan..."
+                      style={{ width:'100%', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'6px', padding:'7px 32px 7px 10px', color:'var(--text)', fontSize:'13px', outline:'none', fontFamily:'monospace' }}
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setIsRegex(!isRegex)}
+                      title="Gunakan regex search"
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        background: isRegex ? 'var(--purple-600)' : 'transparent',
+                        border: 'none',
+                        color: isRegex ? '#fff' : 'var(--text2)',
+                        fontSize: '9px',
+                        fontWeight: 'bold',
+                        padding: '2px 4px',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      .*
+                    </button>
+                  </div>
+                  
                   <button 
-                    onClick={(e) => toggleStarWriteup(w, e)}
+                    type="button"
+                    onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                     style={{
+                      width: '100%',
                       background: 'transparent',
                       border: 'none',
+                      color: 'var(--purple-300)',
+                      fontSize: '11px',
+                      textAlign: 'left',
+                      padding: '6px 0 0 0',
                       cursor: 'pointer',
-                      fontSize: '12px',
-                      padding: 0,
-                      opacity: w.is_starred === 1 ? 1 : 0.2
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
                     }}
                   >
-                    ⭐
+                    <span>{showAdvancedFilters ? '▲ Sembunyikan Filter' : '▼ Tampilkan Filter'}</span>
                   </button>
-                </div>
-                <div style={{ display:'flex', gap:'5px', alignItems:'center', flexWrap:'wrap' }}>
-                  {w.writeup_mode === 'cve' ? (
-                    <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,69,96,0.1)', color: 'var(--red)', border: '1px solid rgba(255,69,96,0.2)' }}>
-                      CVSS {w.cve_cvss_score ? Number(w.cve_cvss_score).toFixed(1) : '-'}
-                    </span>
-                  ) : (
-                    <DiffBadge diff={w.difficulty} />
-                  )}
-                  <span className="badge-platform" style={{ fontSize:'10px', padding:'2px 7px', borderRadius:'10px', background:'rgba(127,119,221,0.12)', color:'var(--purple-200)', border:'1px solid rgba(127,119,221,0.2)', fontFamily:'monospace' }} title={w.platform}>{w.platform}</span>
-                </div>
-              </Link>
-            ))}
-          </div>
 
-          {/* Stats */}
-          <div style={{ padding:'8px 14px', borderTop:`1px solid ${borderColor}`, display:'flex', gap:'10px', flexWrap:'wrap', fontFamily:'monospace', fontSize:'10px', color:'var(--text2)' }}>
-            <span>Total <span style={{ color:'var(--purple-400)' }}>{writeups.length}</span></span>
-            <span style={{ color:'var(--green)' }}>Easy {counts.Easy}</span>
-            <span style={{ color:'var(--amber)' }}>Med {counts.Medium}</span>
-            <span style={{ color:'var(--red)' }}>Hard {counts.Hard}</span>
+                  {showAdvancedFilters && (
+                    <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                      {/* Date Filter */}
+                      <div>
+                        <div style={{ fontSize: '9px', color: 'var(--text2)', marginBottom: '3px' }}>RENTANG TANGGAL</div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ width: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }} />
+                          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ width: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }} />
+                        </div>
+                      </div>
+
+                      {/* Sort Order */}
+                      <div>
+                        <div style={{ fontSize: '9px', color: 'var(--text2)', marginBottom: '3px' }}>URUTKAN BERDASARKAN</div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ width: '65%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                            <option value="created_at">Tanggal Dibuat</option>
+                            <option value="updated_at">Tanggal Diubah</option>
+                            <option value="title">Judul Laporan</option>
+                            <option value="difficulty">Difficulty</option>
+                            <option value="cve_cvss_score">Nilai CVSS</option>
+                          </select>
+                          <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} style={{ width: '35%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '10px', padding: '3px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                            <option value="DESC">DESC</option>
+                            <option value="ASC">ASC</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Tag Filters */}
+                      {allUniqueTags.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: '9px', color: 'var(--text2)', marginBottom: '3px' }}>FILTER TAGS</div>
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxHeight: '55px', overflowY: 'auto' }}>
+                            {allUniqueTags.map(tag => {
+                              const isSel = selectedTags.includes(tag)
+                              return (
+                                <span
+                                  key={tag}
+                                  onClick={() => toggleTagSelection(tag)}
+                                  style={{
+                                    fontSize: '9px',
+                                    padding: '2px 6px',
+                                    borderRadius: '3px',
+                                    border: `1px solid ${isSel ? 'var(--purple-500)' : 'var(--border)'}`,
+                                    background: isSel ? 'var(--purple-900)' : 'transparent',
+                                    color: isSel ? '#fff' : 'var(--text2)',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {tag}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Sidebar Folder tree section */}
+                <div style={{ padding: '10px 12px 6px', borderBottom: `1px solid ${borderColor}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--purple-300)', letterSpacing: '0.5px' }}>📁 WORKSPACES / FOLDERS</span>
+                    <button 
+                      onClick={createFolder} 
+                      style={{ background: 'transparent', border: 'none', color: 'var(--purple-200)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', padding: '0 4px' }}
+                      title="Buat folder baru"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '12px' }}>
+                    <div 
+                      onClick={() => setSelectedFolderId(null)}
+                      style={{ 
+                        padding: '5px 8px', 
+                        borderRadius: '4px', 
+                        cursor: 'pointer', 
+                        background: selectedFolderId === null ? 'rgba(127,119,221,0.1)' : 'transparent',
+                        color: selectedFolderId === null ? '#fff' : 'var(--text2)'
+                      }}
+                    >
+                      🗂️ Semua Laporan
+                    </div>
+                    <div 
+                      onClick={() => setSelectedFolderId('starred')}
+                      style={{ 
+                        padding: '5px 8px', 
+                        borderRadius: '4px', 
+                        cursor: 'pointer', 
+                        background: selectedFolderId === 'starred' ? 'rgba(127,119,221,0.1)' : 'transparent',
+                        color: selectedFolderId === 'starred' ? '#fff' : 'var(--text2)'
+                      }}
+                    >
+                      ⭐ Favorit / Berbintang
+                    </div>
+                    <div 
+                      onClick={() => setSelectedFolderId('unorganized')}
+                      style={{ 
+                        padding: '5px 8px', 
+                        borderRadius: '4px', 
+                        cursor: 'pointer', 
+                        background: selectedFolderId === 'unorganized' ? 'rgba(127,119,221,0.1)' : 'transparent',
+                        color: selectedFolderId === 'unorganized' ? '#fff' : 'var(--text2)'
+                      }}
+                    >
+                      📥 Tanpa Folder
+                    </div>
+
+                    {/* Folders List */}
+                    {folders.map(f => (
+                      <div 
+                        key={f.id}
+                        style={{ 
+                          padding: '5px 8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer', 
+                          background: selectedFolderId === String(f.id) ? 'rgba(127,119,221,0.15)' : 'transparent',
+                          color: selectedFolderId === String(f.id) ? '#fff' : 'var(--text2)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
+                        className="folder-item-row"
+                        onClick={() => setSelectedFolderId(String(f.id))}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: f.color }}>{f.icon}</span>
+                          <span>{f.name}</span>
+                        </span>
+                        <span className="folder-actions" style={{ display: 'none', gap: '6px' }}>
+                          <button onClick={(e) => { e.stopPropagation(); renameFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--text2)', fontSize:'10px', cursor:'pointer' }}>✏️</button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--red)', fontSize:'10px', cursor:'pointer' }}>🗑️</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Difficulty Quick Filter */}
+                <div style={{ padding:'10px 12px 8px', display:'flex', gap:'4px', flexWrap:'wrap', borderBottom:`1px solid ${borderColor}` }}>
+                  {['all','Easy','Medium','Hard','Insane'].map(f => (
+                    <button key={f} onClick={() => setFilter(f)}
+                      style={{ padding:'2px 8px', borderRadius:'20px', fontSize:'10px', border:`1px solid ${filter===f ? 'var(--purple-600)' : 'var(--border)'}`, background: filter===f ? 'var(--purple-600)' : 'transparent', color: filter===f ? '#fff' : 'var(--text2)', cursor:'pointer', fontFamily:'monospace' }}>
+                      {f === 'all' ? 'All' : f}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Writeups List */}
+                <div style={{ flex:1, overflowY:'auto', padding:'6px 0' }}>
+                  {loading ? (
+                    <div style={{ padding: '6px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 0', borderBottom: '1px solid rgba(127,119,221,0.08)' }}>
+                          <div className="skeleton-pulse" style={{ height: '14px', width: '85%' }} />
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <div className="skeleton-pulse" style={{ height: '12px', width: '35px' }} />
+                            <div className="skeleton-pulse" style={{ height: '12px', width: '55px' }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : writeups.length === 0 ? (
+                    <div style={{ padding:'20px', textAlign:'center', color:'var(--text2)', fontFamily:'monospace', fontSize:'12px' }}>No writeups found</div>
+                  ) : writeups.map(w => (
+                    <Link key={w.id} href={`/dashboard/${w.id}`}
+                      className={`sidebar-item ${String(w.id) === activeId ? 'active' : ''}`}
+                      style={{ display:'block', textDecoration:'none', padding:'10px 14px', position: 'relative' }}>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                        <div className="title" style={{ fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', paddingRight: '12px' }}>{w.title}</div>
+                        <button 
+                          onClick={(e) => toggleStarWriteup(w, e)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            padding: 0,
+                            opacity: w.is_starred === 1 ? 1 : 0.2
+                          }}
+                        >
+                          ⭐
+                        </button>
+                      </div>
+                      <div style={{ display:'flex', gap:'5px', alignItems:'center', flexWrap:'wrap' }}>
+                        {w.writeup_mode === 'cve' ? (
+                          <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,69,96,0.1)', color: 'var(--red)', border: '1px solid rgba(255,69,96,0.2)' }}>
+                            CVSS {w.cve_cvss_score ? Number(w.cve_cvss_score).toFixed(1) : '-'}
+                          </span>
+                        ) : (
+                          <DiffBadge diff={w.difficulty} />
+                        )}
+                        <span className="badge-platform" style={{ fontSize:'10px', padding:'2px 7px', borderRadius:'10px', background:'rgba(127,119,221,0.12)', color:'var(--purple-200)', border:'1px solid rgba(127,119,221,0.2)', fontFamily:'monospace' }} title={w.platform}>{w.platform}</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', borderTop:'1px solid var(--border)', background:'rgba(0,0,0,0.15)', fontFamily:'monospace' }}>
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border)',
+                        color: page === 1 ? 'var(--text2)' : '#fff',
+                        borderRadius: '4px',
+                        padding: '3px 8px',
+                        cursor: page === 1 ? 'not-allowed' : 'pointer',
+                        fontSize: '11px'
+                      }}
+                    >
+                      ◄ Prev
+                    </button>
+                    <span style={{ fontSize: '11px', color: 'var(--text2)' }}>
+                      {page} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border)',
+                        color: page === totalPages ? 'var(--text2)' : '#fff',
+                        borderRadius: '4px',
+                        padding: '3px 8px',
+                        cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                        fontSize: '11px'
+                      }}
+                    >
+                      Next ►
+                    </button>
+                  </div>
+                )}
+
+                {/* Stats */}
+                <div style={{ padding:'8px 14px', borderTop:`1px solid ${borderColor}`, display:'flex', gap:'10px', flexWrap:'wrap', fontFamily:'monospace', fontSize:'10px', color:'var(--text2)' }}>
+                  <span>Total <span style={{ color:'var(--purple-400)' }}>{writeups.length}</span></span>
+                  <span style={{ color:'var(--green)' }}>Easy {counts.Easy}</span>
+                  <span style={{ color:'var(--amber)' }}>Med {counts.Medium}</span>
+                  <span style={{ color:'var(--red)' }}>Hard {counts.Hard}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -668,6 +842,32 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         .folder-item-row:hover .folder-actions {
           display: flex !important;
         }
+        .sidebar-nav-item:hover {
+          background: rgba(255, 255, 255, 0.03) !important;
+          color: #fff !important;
+        }
+        .avatar-hover:hover {
+          border-color: var(--purple-400) !important;
+          box-shadow: 0 0 10px rgba(127,119,221,0.4);
+        }
+        .dropdown-item:hover {
+          background: rgba(255, 255, 255, 0.05) !important;
+        }
+        .dropdown-item-logout:hover {
+          background: rgba(255, 69, 96, 0.08) !important;
+        }
+        .btn-new-writeup:hover {
+          background: var(--purple-800) !important;
+          box-shadow: 0 4px 12px rgba(83,74,183,0.5) !important;
+          transform: translateY(-1px);
+        }
+        .command-palette-pill {
+          opacity: 0.8;
+          transition: opacity 0.2s;
+        }
+        .command-palette-pill:hover {
+          opacity: 1;
+        }
         @media (max-width: 768px) {
           .menu-toggle {
             display: block;
@@ -685,7 +885,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           .sidebar-overlay {
             display: block;
             position: fixed;
-            top: 52px;
+            top: 56px;
             left: 0;
             right: 0;
             bottom: 0;

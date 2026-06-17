@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTokenFromRequest } from '@/lib/auth'
 import pool from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+
+import { sanitizeText } from '@/lib/sanitize'
+
 export async function GET(req: NextRequest) {
   const payload = getTokenFromRequest(req)
   if (!payload)
@@ -35,9 +39,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Team name is required' }, { status: 400 })
     }
 
+    const sanitizedName = sanitizeText(name.trim())
+
     const [result]: any = await pool.query(
       'INSERT INTO teams (name, owner_id) VALUES (?, ?)',
-      [name.trim(), payload.id]
+      [sanitizedName, payload.id]
     )
     const teamId = result.insertId
 
@@ -50,6 +56,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, teamId }, { status: 201 })
   } catch (err: any) {
     console.error('[POST TEAMS ERROR]', err)
-    return NextResponse.json({ error: 'Failed to create team' }, { status: 500 })
+    return NextResponse.json({ error: err.message || 'Failed to create team' }, { status: 500 })
   }
 }

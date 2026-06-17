@@ -41,7 +41,7 @@ export default function TeamsPage() {
   const fetchTeams = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/teams')
+      const res = await fetch(`/api/teams?t=${Date.now()}`)
       const data = await res.json()
       if (res.ok) {
         setTeams(data.teams || [])

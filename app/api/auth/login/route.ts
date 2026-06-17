@@ -7,7 +7,7 @@ import { checkRateLimit, getClientIP } from '@/lib/rateLimit'
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIP(req)
-    const limit = checkRateLimit(ip, 'login')
+    const limit = await checkRateLimit(ip, 'login')
     if (limit.limited) {
       return NextResponse.json(
         { error: `Terlalu banyak percobaan login. Silakan coba lagi dalam ${Math.ceil(limit.resetIn / 1000)} detik.` },
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       user: { id: user.id, email: user.email, username: user.username }
     })
     res.cookies.set('hj_token', token, {
-      httpOnly: true, maxAge: 60 * 60 * 24 * 7, path: '/', sameSite: 'lax'
+      httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 60 * 60 * 24 * 7, path: '/', sameSite: 'lax'
     })
     return res
   } catch (err) {
