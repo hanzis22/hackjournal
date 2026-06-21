@@ -12,10 +12,20 @@ export default async function WriteupDetailPage({ params }: { params: Promise<{ 
   if (!payload) notFound()
 
   const [rows]: any = await pool.query(
-    'SELECT * FROM writeups WHERE id = ? AND user_id = ?', [id, payload.id]
+    'SELECT * FROM writeups WHERE id = ?', [id]
   )
   const w = (rows as any[])[0]
   if (!w) notFound()
+
+  if (w.team_id === null) {
+    if (w.user_id !== payload.id) notFound()
+  } else {
+    const [memberRows]: any = await pool.query(
+      'SELECT role FROM team_members WHERE team_id = ? AND user_id = ?',
+      [w.team_id, payload.id]
+    )
+    if (memberRows.length === 0) notFound()
+  }
 
   // Convert dates to string so they can be sent to Client Component
   const writeup = {

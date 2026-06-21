@@ -55,6 +55,16 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     }
   }, [pathname])
 
+  // Redirect legacy tab=tim links to new /dashboard/teams path
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search)
+      if (searchParams.get('tab') === 'tim') {
+        router.push('/dashboard/teams')
+      }
+    }
+  }, [pathname, router])
+
   // Search & Filters State
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -84,6 +94,51 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [totalWriteups, setTotalWriteups] = useState(0)
   const limit = 10
 
+  // Team-Writeups states
+  const [scope, setScope] = useState<'personal' | 'team'>('personal')
+  const [myTeams, setMyTeams] = useState<any[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false)
+  const [notifTab, setNotifTab] = useState<'action' | 'activity'>('action')
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications?limit=10')
+      if (res.ok) {
+        const d = await res.json()
+        setNotifications(d.notifications || [])
+        setUnreadCount(d.unreadCount || 0)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
+
+  const markAsRead = async (id: number, link?: string) => {
+    try {
+      await fetch(`/api/notifications/${id}/read`, { method: 'POST' })
+      fetchNotifications()
+      if (link) {
+        router.push(link)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const markAllRead = async () => {
+    try {
+      await fetch('/api/notifications/mark-all-read', { method: 'POST' })
+      fetchNotifications()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   useEffect(() => {
     fetch('/api/auth/me')
       .then(r => r.json())
@@ -99,7 +154,25 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     setLang(getCurrentLang())
     fetchFolders()
     fetchUniqueTags()
-  }, [])
+    fetchNotifications()
+
+    // Poll every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000)
+
+    // Fetch teams list
+    fetch('/api/teams')
+      .then(r => r.json())
+      .then(d => {
+        const teamsList = d.teams || []
+        setMyTeams(teamsList)
+        if (teamsList.length > 0) {
+          setSelectedTeamId(teamsList[0].id)
+        }
+      })
+      .catch(err => console.error('Error fetching teams in shell:', err))
+
+    return () => clearInterval(interval)
+  }, [fetchNotifications])
 
   // Debounce search term changes (300ms delay)
   useEffect(() => {
@@ -146,12 +219,23 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       if (sortBy) params.set('sort_by', sortBy)
       if (sortOrder) params.set('sort_order', sortOrder)
 
-      if (selectedFolderId === 'starred') {
-        params.set('is_starred', 'true')
-      } else if (selectedFolderId === 'unorganized') {
-        params.set('folder_id', 'null')
-      } else if (selectedFolderId) {
-        params.set('folder_id', selectedFolderId)
+      if (scope === 'team') {
+        if (selectedTeamId === null) {
+          setWriteups([])
+          setLoading(false)
+          return
+        }
+        params.set('scope', 'team')
+        params.set('team_id', String(selectedTeamId))
+      } else {
+        params.set('scope', 'personal')
+        if (selectedFolderId === 'starred') {
+          params.set('is_starred', 'true')
+        } else if (selectedFolderId === 'unorganized') {
+          params.set('folder_id', 'null')
+        } else if (selectedFolderId) {
+          params.set('folder_id', selectedFolderId)
+        }
       }
 
       params.set('page', String(page))
@@ -174,7 +258,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, filter, selectedFolderId, isRegex, startDate, endDate, selectedTags, sortBy, sortOrder, page])
+  }, [debouncedSearch, filter, selectedFolderId, isRegex, startDate, endDate, selectedTags, sortBy, sortOrder, page, scope, selectedTeamId])
 
   useEffect(() => {
     setPage(1)
@@ -363,10 +447,133 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           <span className="command-palette-pill" style={{ fontSize: '10px', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '20px', color: 'var(--text2)', marginLeft: '12px' }}>Ctrl + K</span>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
-          <Link href="/dashboard/new" style={{ padding:'6px 14px', borderRadius:'6px', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'6px', fontWeight:'600', transition:'all 0.2s', boxShadow:'0 2px 8px rgba(83,74,183,0.3)' }} className="btn-new-writeup">
-            + {getTranslation(lang, 'newWriteup')}
-          </Link>
+          {!(scope === 'team' && myTeams.find(t => t.id === selectedTeamId)?.role === 'viewer') && (
+            <Link href={scope === 'team' && selectedTeamId ? `/dashboard/new?team_id=${selectedTeamId}` : '/dashboard/new'} style={{ padding:'6px 14px', borderRadius:'6px', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'12px', textDecoration:'none', display:'flex', alignItems:'center', gap:'6px', fontWeight:'600', transition:'all 0.2s', boxShadow:'0 2px 8px rgba(83,74,183,0.3)' }} className="btn-new-writeup">
+              + {getTranslation(lang, 'newWriteup')}
+            </Link>
+          )}
           
+          {/* Notification Bell Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button 
+              onClick={() => { setNotifDropdownOpen(!notifDropdownOpen); fetchNotifications(); }} 
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', outline: 'none', position: 'relative', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', color: 'var(--text2)' }}
+            >
+              🔔
+              {unreadCount > 0 && (
+                <span style={{ position: 'absolute', top: '2px', right: '2px', background: 'var(--red)', color: '#fff', fontSize: '9px', fontWeight: 'bold', minWidth: '16px', height: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: '2px solid var(--bg2)' }}>
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+
+            {notifDropdownOpen && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setNotifDropdownOpen(false)} />
+                <div style={{ position: 'absolute', right: 0, marginTop: '8px', width: '320px', background: 'rgba(19, 19, 40, 0.95)', border: '1px solid var(--border2)', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', zIndex: 999, backdropFilter: 'blur(10px)', maxHeight: '420px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#fff', fontFamily: 'monospace' }}>// Notifikasi ({unreadCount})</span>
+                    {unreadCount > 0 && (
+                      <button onClick={markAllRead} style={{ background: 'transparent', border: 'none', color: 'var(--purple-400)', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace', padding: 0 }}>
+                        Tandai semua dibaca
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Segmentation Tabs */}
+                  {(() => {
+                    const actionRequiredNotifs = notifications.filter(n => n.is_task === 1 || n.type === 'review_request' || n.type === 'team_invite')
+                    const activityNotifs = notifications.filter(n => !(n.is_task === 1 || n.type === 'review_request' || n.type === 'team_invite'))
+                    const filteredList = notifTab === 'action' ? actionRequiredNotifs : activityNotifs
+
+                    return (
+                      <>
+                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
+                          <button
+                            onClick={() => setNotifTab('action')}
+                            style={{
+                              flex: 1,
+                              padding: '8px',
+                              background: notifTab === 'action' ? 'rgba(127,119,221,0.08)' : 'transparent',
+                              border: 'none',
+                              color: notifTab === 'action' ? '#fff' : 'var(--text2)',
+                              borderBottom: notifTab === 'action' ? '2px solid var(--purple-500)' : '2px solid transparent',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              fontFamily: 'monospace',
+                              fontWeight: 'bold',
+                              outline: 'none'
+                            }}
+                          >
+                            ⚠️ Tasks ({actionRequiredNotifs.length})
+                          </button>
+                          <button
+                            onClick={() => setNotifTab('activity')}
+                            style={{
+                              flex: 1,
+                              padding: '8px',
+                              background: notifTab === 'activity' ? 'rgba(127,119,221,0.08)' : 'transparent',
+                              border: 'none',
+                              color: notifTab === 'activity' ? '#fff' : 'var(--text2)',
+                              borderBottom: notifTab === 'activity' ? '2px solid var(--purple-500)' : '2px solid transparent',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              fontFamily: 'monospace',
+                              fontWeight: 'bold',
+                              outline: 'none'
+                            }}
+                          >
+                            💬 Activity ({activityNotifs.length})
+                          </button>
+                        </div>
+                        <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
+                          {filteredList.length === 0 ? (
+                            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text2)', fontSize: '11px', fontFamily: 'monospace' }}>
+                              Tidak ada notifikasi
+                            </div>
+                          ) : (
+                            filteredList.map(n => (
+                              <div 
+                                key={n.id} 
+                                onClick={() => { setNotifDropdownOpen(false); markAsRead(n.id, n.link); }}
+                                style={{ 
+                                  padding: '10px 12px', 
+                                  borderRadius: '6px', 
+                                  background: n.is_read ? 'transparent' : 'rgba(127,119,221,0.05)', 
+                                  borderBottom: '1px solid rgba(127,119,221,0.05)',
+                                  cursor: 'pointer',
+                                  transition: 'background 0.2s',
+                                  marginBottom: '4px',
+                                  textAlign: 'left'
+                                }}
+                                className="dropdown-item"
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                                  <span style={{ fontSize: '12px', fontWeight: n.is_read ? '500' : 'bold', color: n.is_read ? 'var(--text)' : '#fff' }}>
+                                    {n.title}
+                                  </span>
+                                  {!n.is_read && (
+                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--purple-500)', flexShrink: 0, marginTop: '5px' }} />
+                                  )}
+                                </div>
+                                <p style={{ fontSize: '11px', color: 'var(--text2)', margin: 0, lineHeight: '1.4' }}>
+                                  {n.message}
+                                </p>
+                                <span style={{ fontSize: '9px', color: 'var(--border2)', display: 'block', marginTop: '6px', textAlign: 'right' }}>
+                                  {new Date(n.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Profile Dropdown */}
           <div style={{ position: 'relative' }}>
             <button onClick={() => setUserDropdownOpen(!userDropdownOpen)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', cursor: 'pointer', outline: 'none' }}>
@@ -421,6 +628,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 { path: '/dashboard/engagements', label: getTranslation(lang, 'engagements'), icon: '📦' },
                 { path: '/dashboard/achievements', label: getTranslation(lang, 'achievements'), icon: '🏆' },
                 { path: '/dashboard/vault', label: getTranslation(lang, 'vault'), icon: '🔐' },
+                { path: '/dashboard/library', label: 'Library', icon: '📚' },
                 { path: '/dashboard/analytics', label: getTranslation(lang, 'dashboard'), icon: '📊' },
               ].map(item => {
                 const isActive = item.exact ? pathname === item.path : (pathname.startsWith(item.path) && item.path !== '/dashboard')
@@ -477,6 +685,73 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
             {writeupsSectionOpen && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                {/* Tabs switcher */}
+                <div style={{ display: 'flex', borderBottom: `1px solid ${borderColor}`, background: 'rgba(0,0,0,0.2)' }}>
+                  <button
+                    onClick={() => setScope('personal')}
+                    style={{
+                      flex: 1,
+                      padding: '10px 8px',
+                      background: scope === 'personal' ? 'rgba(127,119,221,0.12)' : 'transparent',
+                      border: 'none',
+                      color: scope === 'personal' ? '#fff' : 'var(--text2)',
+                      borderBottom: scope === 'personal' ? '2px solid var(--purple-500)' : '2px solid transparent',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontFamily: 'monospace',
+                      fontWeight: 'bold',
+                      outline: 'none'
+                    }}
+                  >
+                    👤 Personal
+                  </button>
+                  <button
+                    onClick={() => setScope('team')}
+                    style={{
+                      flex: 1,
+                      padding: '10px 8px',
+                      background: scope === 'team' ? 'rgba(127,119,221,0.12)' : 'transparent',
+                      border: 'none',
+                      color: scope === 'team' ? '#fff' : 'var(--text2)',
+                      borderBottom: scope === 'team' ? '2px solid var(--purple-500)' : '2px solid transparent',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontFamily: 'monospace',
+                      fontWeight: 'bold',
+                      outline: 'none'
+                    }}
+                  >
+                    👥 Tim
+                  </button>
+                </div>
+
+                {/* Team Selector if scope is team */}
+                {scope === 'team' && (
+                  <div style={{ padding: '8px 12px', borderBottom: `1px solid ${borderColor}`, background: 'rgba(0,0,0,0.15)' }}>
+                    <select
+                      value={selectedTeamId || ''}
+                      onChange={e => setSelectedTeamId(e.target.value ? Number(e.target.value) : null)}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg3)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        fontFamily: 'monospace',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">-- Pilih Tim --</option>
+                      {myTeams.map(t => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {/* Advanced Search & Filtering Box */}
                 <div style={{ padding:'12px', borderBottom: `1px solid ${borderColor}` }}>
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -586,85 +861,87 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 </div>
 
                 {/* Sidebar Folder tree section */}
-                <div style={{ padding: '10px 12px 6px', borderBottom: `1px solid ${borderColor}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--purple-300)', letterSpacing: '0.5px' }}>📁 WORKSPACES / FOLDERS</span>
-                    <button 
-                      onClick={createFolder} 
-                      style={{ background: 'transparent', border: 'none', color: 'var(--purple-200)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', padding: '0 4px' }}
-                      title="Buat folder baru"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '12px' }}>
-                    <div 
-                      onClick={() => setSelectedFolderId(null)}
-                      style={{ 
-                        padding: '5px 8px', 
-                        borderRadius: '4px', 
-                        cursor: 'pointer', 
-                        background: selectedFolderId === null ? 'rgba(127,119,221,0.1)' : 'transparent',
-                        color: selectedFolderId === null ? '#fff' : 'var(--text2)'
-                      }}
-                    >
-                      🗂️ Semua Laporan
-                    </div>
-                    <div 
-                      onClick={() => setSelectedFolderId('starred')}
-                      style={{ 
-                        padding: '5px 8px', 
-                        borderRadius: '4px', 
-                        cursor: 'pointer', 
-                        background: selectedFolderId === 'starred' ? 'rgba(127,119,221,0.1)' : 'transparent',
-                        color: selectedFolderId === 'starred' ? '#fff' : 'var(--text2)'
-                      }}
-                    >
-                      ⭐ Favorit / Berbintang
-                    </div>
-                    <div 
-                      onClick={() => setSelectedFolderId('unorganized')}
-                      style={{ 
-                        padding: '5px 8px', 
-                        borderRadius: '4px', 
-                        cursor: 'pointer', 
-                        background: selectedFolderId === 'unorganized' ? 'rgba(127,119,221,0.1)' : 'transparent',
-                        color: selectedFolderId === 'unorganized' ? '#fff' : 'var(--text2)'
-                      }}
-                    >
-                      📥 Tanpa Folder
+                {scope === 'personal' && (
+                  <div style={{ padding: '10px 12px 6px', borderBottom: `1px solid ${borderColor}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--purple-300)', letterSpacing: '0.5px' }}>📁 WORKSPACES / FOLDERS</span>
+                      <button 
+                        onClick={createFolder} 
+                        style={{ background: 'transparent', border: 'none', color: 'var(--purple-200)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', padding: '0 4px' }}
+                        title="Buat folder baru"
+                      >
+                        +
+                      </button>
                     </div>
 
-                    {/* Folders List */}
-                    {folders.map(f => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '12px' }}>
                       <div 
-                        key={f.id}
+                        onClick={() => setSelectedFolderId(null)}
                         style={{ 
                           padding: '5px 8px', 
                           borderRadius: '4px', 
                           cursor: 'pointer', 
-                          background: selectedFolderId === String(f.id) ? 'rgba(127,119,221,0.15)' : 'transparent',
-                          color: selectedFolderId === String(f.id) ? '#fff' : 'var(--text2)',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
+                          background: selectedFolderId === null ? 'rgba(127,119,221,0.1)' : 'transparent',
+                          color: selectedFolderId === null ? '#fff' : 'var(--text2)'
                         }}
-                        className="folder-item-row"
-                        onClick={() => setSelectedFolderId(String(f.id))}
                       >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ color: f.color }}>{f.icon}</span>
-                          <span>{f.name}</span>
-                        </span>
-                        <span className="folder-actions" style={{ display: 'none', gap: '6px' }}>
-                          <button onClick={(e) => { e.stopPropagation(); renameFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--text2)', fontSize:'10px', cursor:'pointer' }}>✏️</button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--red)', fontSize:'10px', cursor:'pointer' }}>🗑️</button>
-                        </span>
+                        🗂️ Semua Laporan
                       </div>
-                    ))}
+                      <div 
+                        onClick={() => setSelectedFolderId('starred')}
+                        style={{ 
+                          padding: '5px 8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer', 
+                          background: selectedFolderId === 'starred' ? 'rgba(127,119,221,0.1)' : 'transparent',
+                          color: selectedFolderId === 'starred' ? '#fff' : 'var(--text2)'
+                        }}
+                      >
+                        ⭐ Favorit / Berbintang
+                      </div>
+                      <div 
+                        onClick={() => setSelectedFolderId('unorganized')}
+                        style={{ 
+                          padding: '5px 8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer', 
+                          background: selectedFolderId === 'unorganized' ? 'rgba(127,119,221,0.1)' : 'transparent',
+                          color: selectedFolderId === 'unorganized' ? '#fff' : 'var(--text2)'
+                        }}
+                      >
+                        📥 Tanpa Folder
+                      </div>
+
+                      {/* Folders List */}
+                      {folders.map(f => (
+                        <div 
+                          key={f.id}
+                          style={{ 
+                            padding: '5px 8px', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer', 
+                            background: selectedFolderId === String(f.id) ? 'rgba(127,119,221,0.15)' : 'transparent',
+                            color: selectedFolderId === String(f.id) ? '#fff' : 'var(--text2)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                          className="folder-item-row"
+                          onClick={() => setSelectedFolderId(String(f.id))}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ color: f.color }}>{f.icon}</span>
+                            <span>{f.name}</span>
+                          </span>
+                          <span className="folder-actions" style={{ display: 'none', gap: '6px' }}>
+                            <button onClick={(e) => { e.stopPropagation(); renameFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--text2)', fontSize:'10px', cursor:'pointer' }}>✏️</button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteFolder(f.id, f.name) }} style={{ background:'transparent', border:'none', color:'var(--red)', fontSize:'10px', cursor:'pointer' }}>🗑️</button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Difficulty Quick Filter */}
                 <div style={{ padding:'10px 12px 8px', display:'flex', gap:'4px', flexWrap:'wrap', borderBottom:`1px solid ${borderColor}` }}>

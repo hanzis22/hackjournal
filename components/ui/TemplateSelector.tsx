@@ -5,9 +5,10 @@ import { BUILTIN_TEMPLATES, WriteupTemplate } from '@/lib/templates'
 interface TemplateSelectorProps {
   onSelect: (template: WriteupTemplate) => void
   onClose: () => void
+  teamId?: number | null
 }
 
-export default function TemplateSelector({ onSelect, onClose }: TemplateSelectorProps) {
+export default function TemplateSelector({ onSelect, onClose, teamId }: TemplateSelectorProps) {
   const [templates, setTemplates] = useState<WriteupTemplate[]>(BUILTIN_TEMPLATES)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -15,41 +16,67 @@ export default function TemplateSelector({ onSelect, onClose }: TemplateSelector
   useEffect(() => {
     async function loadTemplates() {
       try {
-        const res = await fetch('/api/templates')
-        if (res.ok) {
-          const data = await res.json()
-          // Combine and map custom templates if any
-          const mappedCustom = data.map((t: any) => {
-            if (t.is_builtin === 1) return null // Already in BUILTIN
-            
-            let parsedData = {}
-            try {
-              parsedData = JSON.parse(t.template_data)
-            } catch {
-              parsedData = { content: t.template_data }
-            }
-
-            return {
-              id: `custom-${t.id}`,
-              name: t.name,
-              description: t.description || 'Custom user template',
-              writeup_mode: t.writeup_mode,
-              title_pattern: t.name,
-              default_tags: 'custom-template',
-              ...parsedData
-            }
-          }).filter(Boolean)
-
-          setTemplates([...BUILTIN_TEMPLATES, ...mappedCustom])
+        const fetchUrls = ['/api/templates']
+        if (teamId) {
+          fetchUrls.push(`/api/templates?scope=team&team_id=${teamId}`)
         }
+
+        const responses = await Promise.all(fetchUrls.map(url => fetch(url)))
+        const results = await Promise.all(responses.map(res => res.ok ? res.json() : { templates: [] }))
+
+        const personalData = results[0]?.templates || results[0] || []
+        const teamData = results[1]?.templates || results[1] || []
+
+        const mappedPersonal = personalData.map((t: any) => {
+          if (t.is_builtin === 1) return null // Already in BUILTIN
+          
+          let parsedData = {}
+          try {
+            parsedData = typeof t.template_data === 'string' ? JSON.parse(t.template_data) : t.template_data
+          } catch {
+            parsedData = { content: t.template_data }
+          }
+
+          return {
+            id: `custom-${t.id}`,
+            name: t.name,
+            description: t.description || 'Custom user template',
+            writeup_mode: t.writeup_mode,
+            title_pattern: t.name,
+            default_tags: 'custom-template',
+            ...parsedData
+          }
+        }).filter(Boolean)
+
+        const mappedTeam = teamData.map((t: any) => {
+          let parsedData = {}
+          try {
+            parsedData = typeof t.template_data === 'string' ? JSON.parse(t.template_data) : t.template_data
+          } catch {
+            parsedData = { content: t.template_data }
+          }
+
+          return {
+            id: `team-${t.id}`,
+            name: t.name,
+            description: t.description || 'Team template',
+            writeup_mode: t.writeup_mode,
+            title_pattern: t.name,
+            default_tags: 'team-template',
+            is_team: true,
+            ...parsedData
+          }
+        })
+
+        setTemplates([...BUILTIN_TEMPLATES, ...mappedPersonal, ...mappedTeam])
       } catch (err) {
-        console.error('Failed to fetch custom templates:', err)
+        console.error('Failed to fetch templates:', err)
       } finally {
         setLoading(false)
       }
     }
     loadTemplates()
-  }, [])
+  }, [teamId])
 
   const filtered = templates.filter(t => 
     t.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -179,6 +206,11 @@ export default function TemplateSelector({ onSelect, onClose }: TemplateSelector
                   {t.id.startsWith('custom-') && (
                     <span style={{ fontSize: '9px', color: 'var(--purple-300)', background: 'rgba(127,119,221,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
                       Kustom
+                    </span>
+                  )}
+                  {t.is_team && (
+                    <span style={{ fontSize: '9px', color: 'var(--amber)', background: 'rgba(255,191,0,0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(255,191,0,0.2)' }}>
+                      Tim
                     </span>
                   )}
                 </div>

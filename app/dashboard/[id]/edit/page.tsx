@@ -12,10 +12,23 @@ export default async function EditWriteupPage({ params }: { params: Promise<{ id
   if (!payload) notFound()
 
   const [rows]: any = await pool.query(
-    'SELECT * FROM writeups WHERE id = ? AND user_id = ?', [id, payload.id]
+    'SELECT * FROM writeups WHERE id = ?', [id]
   )
   const w = (rows as any[])[0]
   if (!w) notFound()
+
+  // Access check for team writeup
+  if (w.team_id !== null) {
+    const [memberRows]: any = await pool.query(
+      'SELECT role FROM team_members WHERE team_id = ? AND user_id = ?',
+      [w.team_id, payload.id]
+    )
+    if (memberRows.length === 0 || (memberRows[0].role !== 'owner' && memberRows[0].role !== 'editor')) {
+      notFound()
+    }
+  } else {
+    if (w.user_id !== payload.id) notFound()
+  }
 
   return (
     <div style={{ padding:'32px 40px' }}>
@@ -46,6 +59,9 @@ export default async function EditWriteupPage({ params }: { params: Promise<{ id
         encryption_salt: w.encryption_salt,
         encryption_iv: w.encryption_iv,
         attack_chain: w.attack_chain,
+        team_id:      w.team_id,
+        engagement_id: w.engagement_id,
+        global_severity: w.global_severity,
       }} />
     </div>
   )

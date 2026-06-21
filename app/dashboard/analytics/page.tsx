@@ -87,7 +87,7 @@ export default function AnalyticsPage() {
             {last30Days.map((day, idx) => {
               const heightPct = (day.count / maxActivity) * 100
               return (
-                <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', height: '100%', group: 'hover' }} title={`${day.date}: ${day.count} reports`}>
+                <div key={idx} className="group" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', height: '100%' }} title={`${day.date}: ${day.count} reports`}>
                   <div style={{ 
                     width: '100%', 
                     height: `${Math.max(heightPct, 2)}%`, 

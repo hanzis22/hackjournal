@@ -20,7 +20,9 @@ export default function RegisterPage() {
     const data = await res.json()
     setLoading(false)
     if (!res.ok) { setError(data.error); return }
-    router.push('/dashboard')
+    const searchParams = new URLSearchParams(window.location.search)
+    const redir = searchParams.get('redirect')
+    router.push(redir || '/dashboard')
     router.refresh()
   }
 

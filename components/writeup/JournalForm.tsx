@@ -15,6 +15,7 @@ interface JournalFormProps {
   onChange: (field: string, value: any) => void
   onImageUpload: (e: React.ChangeEvent<HTMLInputElement>, fieldKey: string) => void
   uploadingState: Record<string, boolean>
+  readOnly?: boolean
 }
 
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Insane']
@@ -23,7 +24,8 @@ export default function JournalForm({
   form,
   onChange,
   onImageUpload,
-  uploadingState
+  uploadingState,
+  readOnly
 }: JournalFormProps) {
   const labelStyle = { display: 'block', fontSize: '11px', color: 'var(--text2)', marginBottom: '6px', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }
   const inputStyle = { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text)', fontSize: '13px', fontFamily: 'monospace', outline: 'none' }
@@ -113,7 +115,7 @@ export default function JournalForm({
       {/* Editor */}
       <div style={{ marginBottom: '16px' }}>
         <label style={labelStyle}>Writeup Content</label>
-        <RichEditor value={form.content} onChange={val => onChange('content', val)} />
+        <RichEditor value={form.content} onChange={val => onChange('content', val)} readOnly={readOnly} />
         {renderUploadHelper('content')}
       </div>
     </>

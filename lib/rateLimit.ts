@@ -16,6 +16,8 @@ const PRESETS: Record<string, RateLimitConfig> = {
   register: { maxRequests: 3,  windowMs: 60 * 60 * 1000 },  // 3 per hour
   api:      { maxRequests: 60, windowMs: 60 * 1000 },        // 60 per minute
   upload:   { maxRequests: 10, windowMs: 60 * 1000 },        // 10 per minute
+  share_passphrase: { maxRequests: 5, windowMs: 60 * 1000 }, // 5 per minute
+  invite:           { maxRequests: 20, windowMs: 60 * 60 * 1000 }, // 20 per hour
 }
 
 /**

@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
   if (!payload)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const conn = await pool.getConnection()
   try {
     const { name } = await req.json()
     if (!name || !name.trim()) {
@@ -41,21 +42,28 @@ export async function POST(req: NextRequest) {
 
     const sanitizedName = sanitizeText(name.trim())
 
-    const [result]: any = await pool.query(
+    await conn.beginTransaction()
+
+    const [result]: any = await conn.query(
       'INSERT INTO teams (name, owner_id) VALUES (?, ?)',
       [sanitizedName, payload.id]
     )
     const teamId = result.insertId
 
     // Add creator as owner member
-    await pool.query(
+    await conn.query(
       "INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, 'owner')",
       [teamId, payload.id]
     )
 
+    await conn.commit()
+
     return NextResponse.json({ success: true, teamId }, { status: 201 })
   } catch (err: any) {
+    await conn.rollback()
     console.error('[POST TEAMS ERROR]', err)
     return NextResponse.json({ error: err.message || 'Failed to create team' }, { status: 500 })
+  } finally {
+    conn.release()
   }
 }

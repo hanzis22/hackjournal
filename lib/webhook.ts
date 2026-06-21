@@ -20,12 +20,32 @@ export async function triggerWebhooks(userId: number, eventType: string, payload
         let body: any = {}
         
         if (hook.platform === 'discord') {
-          body = {
-            content: `**HackJournal Notification**\nEvent: \`${eventType}\`\nWriteup: **${payload.title}**\nDifficulty: ${payload.difficulty}`
+          if (eventType === 'team_member_joined') {
+            body = { content: `**HackJournal Notification**\nEvent: \`team_member_joined\`\nUser **${payload.username}** joined team **${payload.teamName}**` }
+          } else if (eventType === 'team_member_removed') {
+            body = { content: `**HackJournal Notification**\nEvent: \`team_member_removed\`\nUser **${payload.username}** was removed from team **${payload.teamName}**` }
+          } else if (eventType === 'team_invite_sent') {
+            body = { content: `**HackJournal Notification**\nEvent: \`team_invite_sent\`\nInvite sent to **${payload.email}** for team **${payload.teamName}**` }
+          } else if (eventType === 'writeup_shared_to_team') {
+            body = { content: `**HackJournal Notification**\nEvent: \`writeup_shared_to_team\`\nWriteup **${payload.title}** was shared to team **${payload.teamName}**` }
+          } else {
+            body = {
+              content: `**HackJournal Notification**\nEvent: \`${eventType}\`\nWriteup: **${payload.title}**\nDifficulty: ${payload.difficulty}`
+            }
           }
         } else if (hook.platform === 'slack') {
-          body = {
-            text: `HackJournal Notification: Event: ${eventType} - Writeup: ${payload.title} (${payload.difficulty})`
+          if (eventType === 'team_member_joined') {
+            body = { text: `HackJournal Notification: Event: team_member_joined - User ${payload.username} joined team ${payload.teamName}` }
+          } else if (eventType === 'team_member_removed') {
+            body = { text: `HackJournal Notification: Event: team_member_removed - User ${payload.username} was removed from team ${payload.teamName}` }
+          } else if (eventType === 'team_invite_sent') {
+            body = { text: `HackJournal Notification: Event: team_invite_sent - Invite sent to ${payload.email} for team ${payload.teamName}` }
+          } else if (eventType === 'writeup_shared_to_team') {
+            body = { text: `HackJournal Notification: Event: writeup_shared_to_team - Writeup ${payload.title} was shared to team ${payload.teamName}` }
+          } else {
+            body = {
+              text: `HackJournal Notification: Event: ${eventType} - Writeup: ${payload.title} (${payload.difficulty})`
+            }
           }
         } else {
           // Custom webhook

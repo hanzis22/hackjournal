@@ -178,9 +178,9 @@ export default function CVSSCalculator({ initialVector = '', onChange }: CVSSCal
 
   const handleMetricChange = (metric: string, value: string) => {
     if (cvssVersion === 'v3') {
-      setMetricsV3(prev => ({ ...prev, [metric]: value }))
+      setMetricsV3((prev: any) => ({ ...prev, [metric]: value }))
     } else {
-      setMetricsV4(prev => ({ ...prev, [metric]: value }))
+      setMetricsV4((prev: any) => ({ ...prev, [metric]: value }))
     }
   }
 
@@ -252,7 +252,7 @@ export default function CVSSCalculator({ initialVector = '', onChange }: CVSSCal
 
   return (
     <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '20px', marginBottom: '24px' }}>
-      <div style={{ display: 'flex', justifyContext: 'space-between', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
         <h4 style={{ fontFamily: 'monospace', color: 'var(--purple-300)', margin: 0 }}>
           🛡️ CVSS BASE SCORE CALCULATOR
         </h4>

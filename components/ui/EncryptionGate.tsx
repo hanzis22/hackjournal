@@ -31,6 +31,14 @@ export default function EncryptionGate({
 
   async function attemptDecryption(pass: string, isAutoAttempt = false) {
     try {
+      if (!isAutoAttempt) {
+        const rlRes = await fetch(`/api/share/${initialWriteup.id}/attempt`, { method: 'POST' })
+        if (!rlRes.ok) {
+          const rlData = await rlRes.json()
+          throw new Error(rlData.error || 'Terlalu banyak percobaan. Silakan coba lagi nanti.')
+        }
+      }
+
       const encIv = initialWriteup.encryption_iv || ''
       const encSalt = initialWriteup.encryption_salt || ''
       if (!encIv || !encSalt) {

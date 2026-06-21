@@ -30,7 +30,7 @@ async function getEncryptionKey(passphrase: string, saltBuf: Uint8Array): Promis
   return window.crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: saltBuf,
+      salt: saltBuf as unknown as BufferSource,
       iterations: 100000,
       hash: 'SHA-256'
     },
@@ -56,7 +56,7 @@ export async function encryptPayload(
   const encrypted = await window.crypto.subtle.encrypt(
     {
       name: 'AES-GCM',
-      iv: ivBuf
+      iv: ivBuf as unknown as BufferSource
     },
     key,
     enc.encode(plaintext)
@@ -80,10 +80,10 @@ export async function decryptPayload(passphrase: string, ciphertextHex: string, 
   const decrypted = await window.crypto.subtle.decrypt(
     {
       name: 'AES-GCM',
-      iv: ivBuf
+      iv: ivBuf as unknown as BufferSource
     },
     key,
-    ciphertextBuf
+    ciphertextBuf as unknown as BufferSource
   );
 
   return dec.decode(decrypted);

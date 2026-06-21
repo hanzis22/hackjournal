@@ -29,9 +29,32 @@ export async function GET(req: NextRequest) {
   const page       = parseInt(searchParams.get('page') || '1')
   const offset     = (page - 1) * limit
 
+  const scope = searchParams.get('scope') || 'personal'
+  const teamIdStr = searchParams.get('team_id')
+
   try {
-    let baseWhere = ' FROM writeups WHERE user_id = ?'
-    const params: any[] = [payload.id]
+    let baseWhere = ''
+    const params: any[] = []
+
+    if (scope === 'team') {
+      if (!teamIdStr) {
+        return NextResponse.json({ error: 'team_id wajib disertakan untuk scope team' }, { status: 400 })
+      }
+      const teamId = Number(teamIdStr)
+      // Wajib validasi requester adalah anggota team X sebelum query
+      const [memberRows]: any = await pool.query(
+        'SELECT role FROM team_members WHERE team_id = ? AND user_id = ?',
+        [teamId, payload.id]
+      )
+      if (memberRows.length === 0) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      baseWhere = ' FROM writeups WHERE team_id = ?'
+      params.push(teamId)
+    } else {
+      baseWhere = ' FROM writeups WHERE team_id IS NULL AND user_id = ?'
+      params.push(payload.id)
+    }
 
     // 1. Difficulty filter
     if (difficulty) {
@@ -39,12 +62,14 @@ export async function GET(req: NextRequest) {
       params.push(difficulty)
     }
 
-    // 2. Folder filter
-    if (folderId === 'null') {
-      baseWhere += ' AND folder_id IS NULL'
-    } else if (folderId) {
-      baseWhere += ' AND folder_id = ?'
-      params.push(Number(folderId))
+    // 2. Folder filter (only relevant for personal scope)
+    if (scope !== 'team') {
+      if (folderId === 'null') {
+        baseWhere += ' AND folder_id IS NULL'
+      } else if (folderId) {
+        baseWhere += ' AND folder_id = ?'
+        params.push(Number(folderId))
+      }
     }
 
     // 3. Starred filter
@@ -89,7 +114,7 @@ export async function GET(req: NextRequest) {
     const finalSortBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at'
     const finalSortOrder = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
     
-    const selectQuery = `SELECT id, title, platform, difficulty, tags, is_public, created_at, updated_at, writeup_mode, cve_id, cve_cvss_score, cve_cvss_severity, folder_id, is_starred ${baseWhere} ORDER BY ${finalSortBy} ${finalSortOrder} LIMIT ? OFFSET ?`
+    const selectQuery = `SELECT id, title, platform, difficulty, tags, is_public, created_at, updated_at, writeup_mode, cve_id, cve_cvss_score, cve_cvss_severity, folder_id, is_starred, team_id, cloned_from_id, engagement_id, global_severity ${baseWhere} ORDER BY ${finalSortBy} ${finalSortOrder} LIMIT ? OFFSET ?`
     const selectParams = [...params, limit, offset]
 
     const [rows] = await pool.query(selectQuery, selectParams)
@@ -120,13 +145,58 @@ export async function POST(req: NextRequest) {
     if (!body.title)
       return NextResponse.json({ error: 'Title wajib diisi' }, { status: 400 })
 
+    const team_id = body.team_id !== undefined && body.team_id !== null ? Number(body.team_id) : null
+    const engagement_id = body.engagement_id !== undefined && body.engagement_id !== null ? Number(body.engagement_id) : null
+    const global_severity = body.global_severity || 'None'
+
+    // Validate global_severity enum values
+    const allowedSeverities = ['Critical', 'High', 'Medium', 'Low', 'Info', 'None']
+    if (!allowedSeverities.includes(global_severity)) {
+      return NextResponse.json({ error: 'Severity rating tidak valid' }, { status: 400 })
+    }
+
+    // If team_id is provided, validate requester's role
+    if (team_id !== null) {
+      const [memberRows]: any = await pool.query(
+        'SELECT role FROM team_members WHERE team_id = ? AND user_id = ?',
+        [team_id, payload.id]
+      )
+      if (memberRows.length === 0 || (memberRows[0].role !== 'owner' && memberRows[0].role !== 'editor')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    // Validate engagement_id ownership / team matching
+    if (engagement_id !== null) {
+      const [engRows]: any = await pool.query(
+        'SELECT team_id, user_id FROM engagements WHERE id = ?',
+        [engagement_id]
+      )
+      if (engRows.length === 0) {
+        return NextResponse.json({ error: 'Engagement tidak ditemukan' }, { status: 404 })
+      }
+      const engagement = engRows[0]
+      if (team_id !== null) {
+        if (engagement.team_id !== team_id) {
+          return NextResponse.json({ error: 'Engagement tidak cocok dengan tim' }, { status: 400 })
+        }
+      } else {
+        if (engagement.team_id !== null || engagement.user_id !== payload.id) {
+          return NextResponse.json({ error: 'Forbidden: engagement bukan milik Anda' }, { status: 403 })
+        }
+      }
+    }
+
     // SEC-02: Server-side sanitization
     const title = sanitizeText(body.title)
     const platform = sanitizeText(body.platform || 'Custom')
     const difficulty = sanitizeText(body.difficulty || 'Easy')
     const tags = Array.isArray(body.tags) ? body.tags.map((t: string) => sanitizeText(t)).join(',') : sanitizeText(body.tags || '')
     const content = sanitizeHtml(body.content || '')
-    const is_public = body.is_public ? 1 : 0
+    
+    // Set is_public = 0 by default for team writeups
+    const is_public = team_id !== null ? 0 : (body.is_public ? 1 : 0)
+    
     const writeup_mode = body.writeup_mode || 'journal'
     const cve_id = sanitizeText(body.cve_id || '') || null
     const cve_product = sanitizeText(body.cve_product || '') || null
@@ -153,9 +223,9 @@ export async function POST(req: NextRequest) {
         cve_cvss_score, cve_cvss_vector, cve_cvss_severity,
         cve_impact, cve_poc, cve_remediation,
         is_encrypted, encryption_salt, encryption_iv, attack_chain,
-        folder_id, is_starred, checklist_state
+        folder_id, is_starred, checklist_state, team_id, engagement_id, global_severity
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         payload.id, title, platform, difficulty,
         tags, content, is_public,
@@ -163,7 +233,7 @@ export async function POST(req: NextRequest) {
         cve_cvss_score, cve_cvss_vector, cve_cvss_severity,
         cve_impact, cve_poc, cve_remediation,
         is_encrypted, encryption_salt, encryption_iv, attack_chain,
-        folder_id, is_starred, checklist_state
+        folder_id, is_starred, checklist_state, team_id, engagement_id, global_severity
       ]
     )
 

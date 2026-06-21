@@ -63,7 +63,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     if (!product && summary) {
-      const match = summary.match(/(Apache\s+[A-Za-z0-9_-]+|WordPress\s+[A-Za-z0-9_-]+|[A-Z][A-Za-z0-9_#-]+)\s+versions?\s+([0-.x\s]+)/i)
+      const match = summary.match(/(Apache\s+[A-Za-z0-9_-]+|WordPress\s+[A-Za-z0-9_-]+|[A-Z][A-Za-z0-9_#-]+)\s+versions?\s+([0-9.x\s]+)/i)
       if (match) {
         product = match[1]
         version = match[2]

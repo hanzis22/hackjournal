@@ -14,6 +14,7 @@ export interface WriteupTemplate {
   cve_impact?: string
   cve_poc?: string
   cve_remediation?: string
+  is_team?: boolean
 }
 
 export const BUILTIN_TEMPLATES: WriteupTemplate[] = [

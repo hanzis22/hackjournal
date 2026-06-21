@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'react-ok' // wait, useRouter should come from next/navigation
-import { useRouter as useNextRouter } from 'next/navigation'
+import { useRouter as useNextRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { encryptPayload, bufToHex } from '@/lib/cryptoClient'
 import HttpFormatter from './HttpFormatter'
 import EncryptionGate from './EncryptionGate'
@@ -41,14 +41,44 @@ interface Props {
     is_encrypted?: number
     encryption_salt?: string
     encryption_iv?: string
-    attack_chain?: string
+    attack_chain?: string | null
     checklist_state?: string
     network_diagram?: string
+    team_id?: number | null
+    engagement_id?: number | null
+    global_severity?: string | null
+    status?: string
+    folder_id?: string | null
+    is_starred?: number | boolean
+    cloned_from_id?: number | null
   }
 }
 
 export default function WriteupForm({ initial }: Props) {
   const router = useNextRouter()
+  const searchParams = useSearchParams()
+  const queryTeamId = searchParams.get('team_id')
+  
+  const [teamRole, setTeamRole] = useState<'owner' | 'editor' | 'viewer' | null>(null)
+  const [teamName, setTeamName] = useState('')
+
+  const activeTeamId = initial?.team_id || (queryTeamId ? Number(queryTeamId) : null)
+
+  useEffect(() => {
+    if (activeTeamId) {
+      fetch('/api/teams')
+        .then(res => res.json())
+        .then(data => {
+          const matched = (data.teams || []).find((t: any) => t.id === activeTeamId)
+          if (matched) {
+            setTeamRole(matched.role)
+            setTeamName(matched.name)
+          }
+        })
+        .catch(err => console.error('Error fetching teams in form:', err))
+    }
+  }, [activeTeamId])
+
   const isEdit = !!initial?.id
 
   // Decryption states
@@ -69,11 +99,23 @@ export default function WriteupForm({ initial }: Props) {
 
   const handleSelectTemplate = (template: WriteupTemplate) => {
     setMode(template.writeup_mode)
+    let templateContent = template.content || ''
+    try {
+      if (typeof templateContent === 'string' && templateContent.trim().startsWith('{')) {
+        const parsed = JSON.parse(templateContent)
+        if (parsed && typeof parsed === 'object' && 'content' in parsed) {
+          templateContent = parsed.content || ''
+        }
+      }
+    } catch (e) {
+      // not a JSON string, keep templateContent as is
+    }
+
     setForm(prev => ({
       ...prev,
       title: template.title_pattern || prev.title,
       tags: template.default_tags || prev.tags,
-      content: template.content || prev.content,
+      content: templateContent || prev.content,
       cve_product: template.cve_product || prev.cve_product,
       cve_version: template.cve_version || prev.cve_version,
       cve_cwe: template.cve_cwe || prev.cve_cwe,
@@ -115,6 +157,7 @@ export default function WriteupForm({ initial }: Props) {
 
   // Form State
   const [folders, setFolders] = useState<any[]>([])
+  const [engagements, setEngagements] = useState<any[]>([])
   const [form, setForm] = useState({
     title: initial?.title || '',
     platform: initial?.platform || '',
@@ -135,6 +178,8 @@ export default function WriteupForm({ initial }: Props) {
     folder_id: initial?.folder_id || '',
     is_starred: initial?.is_starred === 1,
     network_diagram: initial?.network_diagram || '',
+    engagement_id: initial?.engagement_id || '',
+    global_severity: initial?.global_severity || 'None',
   })
 
   useEffect(() => {
@@ -143,7 +188,15 @@ export default function WriteupForm({ initial }: Props) {
       .then(data => setFolders(data.folders || []))
   }, [])
 
-  // Attack Chain states
+  useEffect(() => {
+    if (activeTeamId) {
+      fetch(`/api/engagements?team_id=${activeTeamId}`)
+        .then(res => res.json())
+        .then(data => setEngagements(data.engagements || []))
+        .catch(err => console.error('Error fetching engagements in form:', err))
+    }
+  }, [activeTeamId])
+
   const [attackChain, setAttackChain] = useState<any[]>(() => {
     if (initial?.attack_chain && initial.is_encrypted !== 1) {
       try {
@@ -237,6 +290,8 @@ export default function WriteupForm({ initial }: Props) {
       folder_id: initial?.folder_id || '',
       is_starred: initial?.is_starred === 1,
       network_diagram: decrypted.network_diagram || '',
+      engagement_id: decrypted.engagement_id || '',
+      global_severity: decrypted.global_severity || 'None',
     })
     if (decrypted.writeup_mode) setMode(decrypted.writeup_mode)
     if (decrypted.attack_chain) {
@@ -345,6 +400,10 @@ export default function WriteupForm({ initial }: Props) {
       cve_poc: draftData.cve_poc || '',
       cve_remediation: draftData.cve_remediation || '',
       network_diagram: draftData.network_diagram || '',
+      folder_id: draftData.folder_id || '',
+      is_starred: draftData.is_starred === 1,
+      engagement_id: draftData.engagement_id || '',
+      global_severity: draftData.global_severity || 'None',
     })
     if (draftData.mode) setMode(draftData.mode)
     if (draftData.attackChain) setAttackChain(draftData.attackChain)
@@ -395,7 +454,7 @@ export default function WriteupForm({ initial }: Props) {
         payload.cve_remediation = form.cve_remediation
       }
 
-      let submitContent = JSON.stringify(payload)
+      let submitContent = ''
 
       // Encrypt client-side if enabled
       if (isEncrypted) {
@@ -414,16 +473,19 @@ export default function WriteupForm({ initial }: Props) {
         encIv = `${ivTitleHex}:${ivContentHex}`
 
         // Encrypt fields
-        submitTitle = await encryptPayload(passphrase, form.title, encSalt, ivTitleHex)
-        submitContent = await encryptPayload(passphrase, submitContent, encSalt, ivContentHex)
+        const titlePayload = await encryptPayload(passphrase, form.title, encSalt, ivTitleHex)
+        submitTitle = titlePayload.ciphertext
+        const contentPayload = await encryptPayload(passphrase, JSON.stringify(payload), encSalt, ivContentHex)
+        submitContent = contentPayload.ciphertext
 
         // Store key locally for user convenience during active session
         sessionStorage.setItem('hj_encryption_key', passphrase)
       } else {
+        submitContent = form.content
         sessionStorage.removeItem('hj_encryption_key')
       }
 
-      const bodyData = {
+      const bodyData: any = {
         title: submitTitle,
         content: submitContent,
         difficulty: mode === 'journal' ? form.difficulty : 'Easy',
@@ -436,7 +498,27 @@ export default function WriteupForm({ initial }: Props) {
         encryption_iv: encIv,
         folder_id: form.folder_id ? Number(form.folder_id) : null,
         is_starred: form.is_starred ? 1 : 0,
-        network_diagram: form.network_diagram
+        network_diagram: form.network_diagram,
+        team_id: activeTeamId,
+        engagement_id: form.engagement_id ? Number(form.engagement_id) : null,
+        global_severity: form.global_severity,
+      }
+
+      if (!isEncrypted) {
+        bodyData.attack_chain = JSON.stringify(attackChain)
+        bodyData.checklist_state = JSON.stringify(checklistState)
+        if (mode === 'cve') {
+          bodyData.cve_id = form.cve_id
+          bodyData.cve_product = form.cve_product
+          bodyData.cve_version = form.cve_version
+          bodyData.cve_cwe = form.cve_cwe
+          bodyData.cve_cvss_score = form.cve_cvss_score
+          bodyData.cve_cvss_vector = form.cve_cvss_vector
+          bodyData.cve_cvss_severity = form.cve_cvss_severity
+          bodyData.cve_impact = form.cve_impact
+          bodyData.cve_poc = form.cve_poc
+          bodyData.cve_remediation = form.cve_remediation
+        }
       }
 
       const url = isEdit ? `/api/writeups/${initial?.id}` : '/api/writeups'
@@ -479,312 +561,414 @@ export default function WriteupForm({ initial }: Props) {
   }
 
   const labelStyle = { display: 'block', fontSize: '11px', color: 'var(--text2)', marginBottom: '6px', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }
+  const isLocked = isEdit && initial?.status && initial.status !== 'draft'
 
   return (
     <form onSubmit={handleSubmit} style={{ maxWidth: '860px', margin: '0 auto', paddingBottom: '60px' }}>
-      {/* Top Controls: Mode Switcher & Templates */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, display: 'flex', background: 'var(--bg2)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)', minWidth: '280px' }}>
-          <button
-            type="button"
-            onClick={() => setMode('journal')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              borderRadius: '6px',
-              border: 'none',
-              background: mode === 'journal' ? 'var(--purple-600)' : 'transparent',
-              color: mode === 'journal' ? '#fff' : 'var(--text2)',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            📓 MODE JURNAL (STANDAR LAB/CTF)
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('cve')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              borderRadius: '6px',
-              border: 'none',
-              background: mode === 'cve' ? 'var(--purple-600)' : 'transparent',
-              color: mode === 'cve' ? '#fff' : 'var(--text2)',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            🛡️ MODE CVE (SECURITY ADVISORY PROFESSIONAL)
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowTemplateSelector(true)}
-          style={{
-            padding: '12px 18px',
-            borderRadius: '8px',
-            border: '1px solid var(--purple-500)',
-            background: 'rgba(127,119,221,0.08)',
-            color: 'var(--purple-200)',
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
-            fontSize: '13px',
-            cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-        >
-          📑 Pilih Template
-        </button>
-      </div>
-
-      {showTemplateSelector && (
-        <TemplateSelector
-          onSelect={handleSelectTemplate}
-          onClose={() => setShowTemplateSelector(false)}
-        />
-      )}
-
-      {showVersions && isEdit && initial?.id && (
-        <VersionHistoryModal 
-          writeupId={initial.id}
-          onClose={() => setShowVersions(false)}
-          onRestore={(snapshot) => {
-            handleDecrypted(snapshot)
-            setShowVersions(false)
-            alert('Revisi dimuat. Silakan simpan (Save) untuk mempermanenkan.')
-          }}
-        />
-      )}
-
-      {showPlugins && (
-        <PluginParsersModal
-          onClose={() => setShowPlugins(false)}
-          onImport={(parsed) => {
-            if (parsed.title) handleFormFieldChange('title', parsed.title)
-            if (parsed.tags) handleFormFieldChange('tags', parsed.tags)
-            if (parsed.difficulty) handleFormFieldChange('difficulty', parsed.difficulty)
-            if (parsed.content) {
-              const currentContent = (form as any).content || ''
-              handleFormFieldChange('content', currentContent + (currentContent ? '\n\n' : '') + parsed.content)
-            }
-            setShowPlugins(false)
-          }}
-        />
-      )}
-
-      {showAI && (
-        <AIAssistantModal
-          onClose={() => setShowAI(false)}
-          onImport={handleImportAIDraft}
-        />
-      )}
-
-      {showAnnotator && (
-        <ScreenshotAnnotator
-          onSave={async (dataUrl) => {
-            setShowAnnotator(false)
-            setUploadingState(prev => ({ ...prev, content: true }))
-            
-            try {
-              // Convert dataURL to Blob directly without using fetch()
-              const parts = dataUrl.split(',')
-              const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png'
-              const bstr = atob(parts[1])
-              let n = bstr.length
-              const u8arr = new Uint8Array(n)
-              while (n--) {
-                u8arr[n] = bstr.charCodeAt(n)
-              }
-              const blob = new Blob([u8arr], { type: mime })
-              const file = new File([blob], 'annotation.png', { type: 'image/png' })
-              const formData = new FormData()
-              formData.append('image', file)
-              
-              const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData })
-              const data = await uploadRes.json()
-              if (!uploadRes.ok) throw new Error(data.error)
-              
-              const markdownImage = `![Screenshot Annotation](${data.url})`
-              const currentVal = (form as any).content || ''
-              handleFormFieldChange('content', currentVal + `\n\n${markdownImage}\n`)
-            } catch (err: any) {
-              setError('Failed to save annotation: ' + err.message)
-            } finally {
-              setUploadingState(prev => ({ ...prev, content: false }))
-            }
-          }}
-          onCancel={() => setShowAnnotator(false)}
-        />
-      )}
-
-      {/* HTTP requests utility tool */}
-      <HttpFormatter />
-
-      {/* Methodology Checklist */}
-      <MethodologyChecklist initialState={checklistState} onChange={setChecklistState} />
-
-      {/* Network Diagram */}
-      <div style={{ marginBottom: '20px' }}>
-        <div 
-          onClick={() => setShowDiagram(!showDiagram)}
-          style={{ padding: '12px 16px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: showDiagram ? '8px 8px 0 0' : '8px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer', alignItems: 'center' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '18px' }}>🗺️</span>
-            <span style={{ color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>Network/Attack Path Diagram</span>
-          </div>
-          <span style={{ color: 'var(--text2)' }}>{showDiagram ? '▲' : '▼'}</span>
-        </div>
-        {showDiagram && (
-          <div style={{ border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
-            <NetworkDiagramTool initialData={form.network_diagram} onChange={val => handleFormFieldChange('network_diagram', val)} />
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px', gap: '12px' }}>
-        {isEdit && (
-          <button
-            type="button"
-            onClick={() => setShowVersions(true)}
-            style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
-          >
-            🕒 Version History
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setShowPlugins(true)}
-          style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--purple-600)', color: 'var(--purple-300)', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
-        >
-          🧩 Run Plugin / Import Tool Data
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowAnnotator(true)}
-          style={{ padding: '8px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--purple-300)', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
-        >
-          🖼️ Open Screenshot Annotator
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowAI(true)}
-          style={{ padding: '8px 14px', background: 'var(--bg2)', border: '1px solid #7F77DD', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
-        >
-          🤖 AI Assistant
-        </button>
-      </div>
-
-      {hasDraft && (
-        <div style={{ background:'rgba(127,119,221,0.12)', border:'1px solid var(--border2)', borderRadius:'8px', padding:'12px 16px', marginBottom:'20px', display:'flex', justifyContent:'space-between', alignItems:'center', gap: '12px' }}>
-          <div style={{ color:'var(--purple-200)', fontSize:'13px', fontFamily:'monospace' }}>
-            📝 Draf penulisan sebelumnya ditemukan ({draftData?.title || 'Tanpa Judul'}).
-          </div>
-          <div style={{ display:'flex', gap:'8px' }}>
-            <button type="button" onClick={applyDraft}
-              style={{ padding:'6px 12px', borderRadius:'6px', border:'none', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'12px' }}>
-              Gunakan
-            </button>
-            <button type="button" onClick={discardDraft}
-              style={{ padding:'6px 12px', borderRadius:'6px', border:'1px solid rgba(255,69,96,0.4)', background:'transparent', color:'var(--red)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px' }}>
-              Hapus
-            </button>
-          </div>
+      {isLocked && (
+        <div style={{
+          background: 'rgba(245,158,11,0.12)',
+          border: '1px solid rgba(245,158,11,0.3)',
+          color: '#F59E0B',
+          fontSize: '13px',
+          fontFamily: 'monospace',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          lineHeight: '1.5'
+        }}>
+          ⚠️ Laporan ini sedang dikunci karena berstatus <strong>{initial?.status?.toUpperCase() || ''}</strong>. Hubungi Owner Tim untuk mengembalikan status ke Draft jika ingin melakukan perubahan.
         </div>
       )}
 
-      {/* RENDER FORM FIELDS */}
-      {mode === 'journal' ? (
-        <JournalForm
-          form={form}
-          onChange={handleFormFieldChange}
-          onImageUpload={handleImageUpload}
-          uploadingState={uploadingState}
-        />
-      ) : (
-        <CVEForm
-          form={form}
-          onChange={handleFormFieldChange}
-          onImageUpload={handleImageUpload}
-          uploadingState={uploadingState}
-          fetchCveDetails={fetchCveDetails}
-          fetchingCve={fetchingCve}
-        />
+      {/* Header Context Badge */}
+      {activeTeamId !== null && teamName && (
+        <div style={{
+          background: 'rgba(127,119,221,0.1)',
+          border: '1px solid rgba(127,119,221,0.25)',
+          color: 'var(--purple-200)',
+          fontSize: '11px',
+          fontFamily: 'monospace',
+          padding: '8px 14px',
+          borderRadius: '6px',
+          marginBottom: '16px',
+          display: 'inline-block'
+        }}>
+          👥 Tim: <strong>{teamName}</strong> ({teamRole === 'owner' ? 'Owner' : teamRole === 'editor' ? 'Editor' : 'Viewer'})
+        </div>
       )}
 
-      {/* Attack Chain Vector */}
-      <AttackChainEditor
-        attackChain={attackChain}
-        onChange={setAttackChain}
-      />
+      {/* Cloned source indicator */}
+      {initial?.cloned_from_id !== null && initial?.cloned_from_id !== undefined && (
+        <div style={{ marginBottom: '16px' }}>
+          <Link 
+            href={`/dashboard/${initial.cloned_from_id}`}
+            style={{ fontSize: '11px', color: 'var(--purple-300)', fontFamily: 'monospace', textDecoration: 'underline' }}
+          >
+            ↪ Disalin dari laporan pribadi
+          </Link>
+        </div>
+      )}
 
-      {/* Zero-Knowledge Encryption */}
-      <EncryptionToggle
-        isEncrypted={isEncrypted}
-        setIsEncrypted={setIsEncrypted}
-        passphrase={passphrase}
-        setPassphrase={setPassphrase}
-      />
-
-      {/* Metadata settings: Folder, Star, Public */}
-      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '24px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
-        {/* Folder Select */}
-        <div style={{ flex: 1, minWidth: '200px' }}>
-          <label style={{ ...labelStyle, marginBottom: '6px' }}>📁 Pindahkan ke Folder</label>
-          <div style={{ position: 'relative' }}>
-            <select
-              value={form.folder_id}
-              onChange={e => handleFormFieldChange('folder_id', e.target.value)}
-              style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text)', fontSize: '13px', fontFamily: 'monospace', outline: 'none', appearance: 'none' }}
+      <fieldset disabled={teamRole === 'viewer' || !!isLocked} style={{ border: 'none', padding: 0, margin: 0, display: 'contents' }}>
+        {/* Top Controls: Mode Switcher & Templates */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, display: 'flex', background: 'var(--bg2)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)', minWidth: '280px' }}>
+            <button
+              type="button"
+              onClick={() => setMode('journal')}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: '6px',
+                border: 'none',
+                background: mode === 'journal' ? 'var(--purple-600)' : 'transparent',
+                color: mode === 'journal' ? '#fff' : 'var(--text2)',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
             >
-              <option value="">-- Tanpa Folder (Unorganized) --</option>
-              {folders.map(fold => (
-                <option key={fold.id} value={fold.id}>
-                  {fold.icon} {fold.name}
-                </option>
-              ))}
-            </select>
-            <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text2)', fontSize: '10px' }}>
-              ▼
+              📓 MODE JURNAL (STANDAR LAB/CTF)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('cve')}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: '6px',
+                border: 'none',
+                background: mode === 'cve' ? 'var(--purple-600)' : 'transparent',
+                color: mode === 'cve' ? '#fff' : 'var(--text2)',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              🛡️ MODE CVE (SECURITY ADVISORY PROFESSIONAL)
+            </button>
+          </div>
+          {teamRole !== 'viewer' && (
+            <button
+              type="button"
+              onClick={() => setShowTemplateSelector(true)}
+              style={{
+                padding: '12px 18px',
+                borderRadius: '8px',
+                border: '1px solid var(--purple-500)',
+                background: 'rgba(127,119,221,0.08)',
+                color: 'var(--purple-200)',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              📑 Pilih Template
+            </button>
+          )}
+        </div>
+
+        {showTemplateSelector && (
+          <TemplateSelector
+            onSelect={handleSelectTemplate}
+            onClose={() => setShowTemplateSelector(false)}
+            teamId={activeTeamId}
+          />
+        )}
+
+        {showVersions && isEdit && initial?.id && (
+          <VersionHistoryModal 
+            writeupId={initial.id}
+            onClose={() => setShowVersions(false)}
+            onRestore={(snapshot) => {
+              handleDecrypted(snapshot)
+              setShowVersions(false)
+              alert('Revisi dimuat. Silakan simpan (Save) untuk mempermanenkan.')
+            }}
+          />
+        )}
+
+        {showPlugins && (
+          <PluginParsersModal
+            onClose={() => setShowPlugins(false)}
+            onImport={(parsed) => {
+              if (parsed.title) handleFormFieldChange('title', parsed.title)
+              if (parsed.tags) handleFormFieldChange('tags', parsed.tags)
+              if (parsed.difficulty) handleFormFieldChange('difficulty', parsed.difficulty)
+              if (parsed.content) {
+                const currentContent = (form as any).content || ''
+                handleFormFieldChange('content', currentContent + (currentContent ? '\n\n' : '') + parsed.content)
+              }
+              setShowPlugins(false)
+            }}
+          />
+        )}
+
+        {showAI && (
+          <AIAssistantModal
+            onClose={() => setShowAI(false)}
+            onImport={handleImportAIDraft}
+          />
+        )}
+
+        {showAnnotator && (
+          <ScreenshotAnnotator
+            onSave={async (dataUrl) => {
+              setShowAnnotator(false)
+              setUploadingState(prev => ({ ...prev, content: true }))
+              
+              try {
+                const parts = dataUrl.split(',')
+                const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png'
+                const bstr = atob(parts[1])
+                let n = bstr.length
+                const u8arr = new Uint8Array(n)
+                while (n--) {
+                  u8arr[n] = bstr.charCodeAt(n)
+                }
+                const blob = new Blob([u8arr], { type: mime })
+                const file = new File([blob], 'annotation.png', { type: 'image/png' })
+                const formData = new FormData()
+                formData.append('image', file)
+                
+                const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData })
+                const data = await uploadRes.json()
+                if (!uploadRes.ok) throw new Error(data.error)
+                
+                const markdownImage = `![Screenshot Annotation](${data.url})`
+                const currentVal = (form as any).content || ''
+                handleFormFieldChange('content', currentVal + `\n\n${markdownImage}\n`)
+              } catch (err: any) {
+                setError('Failed to save annotation: ' + err.message)
+              } finally {
+                setUploadingState(prev => ({ ...prev, content: false }))
+              }
+            }}
+            onCancel={() => setShowAnnotator(false)}
+          />
+        )}
+
+        {/* HTTP requests utility tool */}
+        <HttpFormatter />
+
+        {/* Methodology Checklist */}
+        <MethodologyChecklist initialState={checklistState} onChange={setChecklistState} />
+
+        {/* Network Diagram */}
+        <div style={{ marginBottom: '20px' }}>
+          <div 
+            onClick={() => setShowDiagram(!showDiagram)}
+            style={{ padding: '12px 16px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: showDiagram ? '8px 8px 0 0' : '8px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer', alignItems: 'center' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '18px' }}>🗺️</span>
+              <span style={{ color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>Network/Attack Path Diagram</span>
+            </div>
+            <span style={{ color: 'var(--text2)' }}>{showDiagram ? '▲' : '▼'}</span>
+          </div>
+          {showDiagram && (
+            <div style={{ border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+              <NetworkDiagramTool initialData={form.network_diagram} onChange={val => handleFormFieldChange('network_diagram', val)} />
+            </div>
+          )}
+        </div>
+
+        {teamRole !== 'viewer' && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px', gap: '12px' }}>
+            {isEdit && (
+              <button
+                type="button"
+                onClick={() => setShowVersions(true)}
+                style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
+              >
+                🕒 Version History
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowPlugins(true)}
+              style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--purple-600)', color: 'var(--purple-300)', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
+            >
+              🧩 Run Plugin / Import Tool Data
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAnnotator(true)}
+              style={{ padding: '8px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--purple-300)', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
+            >
+              🖼️ Open Screenshot Annotator
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAI(true)}
+              style={{ padding: '8px 14px', background: 'var(--bg2)', border: '1px solid #7F77DD', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px' }}
+            >
+              🤖 AI Assistant
+            </button>
+          </div>
+        )}
+
+        {hasDraft && (
+          <div style={{ background:'rgba(127,119,221,0.12)', border:'1px solid var(--border2)', borderRadius:'8px', padding:'12px 16px', marginBottom:'20px', display:'flex', justifyContent:'space-between', alignItems:'center', gap: '12px' }}>
+            <div style={{ color:'var(--purple-200)', fontSize:'13px', fontFamily:'monospace' }}>
+              📝 Draf penulisan sebelumnya ditemukan ({draftData?.title || 'Tanpa Judul'}).
+            </div>
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button type="button" onClick={applyDraft}
+                style={{ padding:'6px 12px', borderRadius:'6px', border:'none', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'12px' }}>
+                Gunakan
+              </button>
+              <button type="button" onClick={discardDraft}
+                style={{ padding:'6px 12px', borderRadius:'6px', border:'1px solid rgba(255,69,96,0.4)', background:'transparent', color:'var(--red)', cursor:'pointer', fontFamily:'monospace', fontSize:'12px' }}>
+                Hapus
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* RENDER FORM FIELDS */}
+        {mode === 'journal' ? (
+          <JournalForm
+            form={form}
+            onChange={handleFormFieldChange}
+            onImageUpload={handleImageUpload}
+            uploadingState={uploadingState}
+            readOnly={!!isLocked}
+          />
+        ) : (
+          <CVEForm
+            form={form}
+            onChange={handleFormFieldChange}
+            onImageUpload={handleImageUpload}
+            uploadingState={uploadingState}
+            fetchCveDetails={fetchCveDetails}
+            fetchingCve={fetchingCve}
+            readOnly={!!isLocked}
+          />
+        )}
+
+        {/* Attack Chain Vector */}
+        <AttackChainEditor
+          attackChain={attackChain}
+          onChange={setAttackChain}
+        />
+
+        {/* Zero-Knowledge Encryption */}
+        <EncryptionToggle
+          isEncrypted={isEncrypted}
+          setIsEncrypted={setIsEncrypted}
+          passphrase={passphrase}
+          setPassphrase={setPassphrase}
+          disabled={teamRole === 'editor'}
+        />
+
+        {/* Metadata settings: Folder, Star, Public */}
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '24px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
+          {/* Folder Select */}
+          <div style={{ flex: 1, minWidth: '200px' }}>
+            <label style={{ ...labelStyle, marginBottom: '6px' }}>📁 Pindahkan ke Folder</label>
+            <div style={{ position: 'relative' }}>
+              <select
+                value={form.folder_id}
+                onChange={e => handleFormFieldChange('folder_id', e.target.value)}
+                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text)', fontSize: '13px', fontFamily: 'monospace', outline: 'none', appearance: 'none' }}
+              >
+                <option value="">-- Tanpa Folder (Unorganized) --</option>
+                {folders.map(fold => (
+                  <option key={fold.id} value={fold.id}>
+                    {fold.icon} {fold.name}
+                  </option>
+                ))}
+              </select>
+              <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text2)', fontSize: '10px' }}>
+                ▼
+              </div>
+            </div>
+          </div>
+
+          {/* Engagement Select (Only in Team Scope) */}
+          {activeTeamId !== null && (
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              <label style={{ ...labelStyle, marginBottom: '6px' }}>📦 Hubungkan ke Engagement</label>
+              <div style={{ position: 'relative' }}>
+                <select
+                  value={form.engagement_id}
+                  onChange={e => handleFormFieldChange('engagement_id', e.target.value)}
+                  style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text)', fontSize: '13px', fontFamily: 'monospace', outline: 'none', appearance: 'none' }}
+                >
+                  <option value="">-- Tanpa Engagement --</option>
+                  {engagements.map(eng => (
+                    <option key={eng.id} value={eng.id}>
+                      {eng.name} ({eng.client || 'No Client'})
+                    </option>
+                  ))}
+                </select>
+                <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text2)', fontSize: '10px' }}>
+                  ▼
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Global Severity Rating */}
+          <div style={{ flex: 1, minWidth: '200px' }}>
+            <label style={{ ...labelStyle, marginBottom: '6px' }}>🔥 Severity Global</label>
+            <div style={{ position: 'relative' }}>
+              <select
+                value={form.global_severity}
+                onChange={e => handleFormFieldChange('global_severity', e.target.value)}
+                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text)', fontSize: '13px', fontFamily: 'monospace', outline: 'none', appearance: 'none' }}
+              >
+                <option value="None">None</option>
+                <option value="Info">Info</option>
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+              </select>
+              <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text2)', fontSize: '10px' }}>
+                ▼
+              </div>
+            </div>
+          </div>
+
+          {/* Star & Public Checkboxes */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="checkbox"
+                id="is_starred"
+                checked={form.is_starred}
+                onChange={e => handleFormFieldChange('is_starred', e.target.checked)}
+                style={{ accentColor: 'var(--purple-400)', width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              <label htmlFor="is_starred" style={{ color: 'var(--text2)', fontSize: '13px', fontFamily: 'monospace', cursor: 'pointer' }}>
+                ⭐ Tandai Bintang (Prioritas/Favorit)
+              </label>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="checkbox"
+                id="is_public"
+                checked={form.is_public}
+                disabled={teamRole === 'editor'}
+                onChange={e => handleFormFieldChange('is_public', e.target.checked)}
+                style={{ accentColor: 'var(--purple-400)', width: '16px', height: '16px', cursor: teamRole === 'editor' ? 'not-allowed' : 'pointer' }}
+              />
+              <label htmlFor="is_public" style={{ color: 'var(--text2)', fontSize: '13px', fontFamily: 'monospace', cursor: teamRole === 'editor' ? 'not-allowed' : 'pointer' }}>
+                🔗 Jadikan writeup ini publik (Shareable)
+              </label>
             </div>
           </div>
         </div>
-
-        {/* Star & Public Checkboxes */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input
-              type="checkbox"
-              id="is_starred"
-              checked={form.is_starred}
-              onChange={e => handleFormFieldChange('is_starred', e.target.checked)}
-              style={{ accentColor: 'var(--purple-400)', width: '16px', height: '16px', cursor: 'pointer' }}
-            />
-            <label htmlFor="is_starred" style={{ color: 'var(--text2)', fontSize: '13px', fontFamily: 'monospace', cursor: 'pointer' }}>
-              ⭐ Tandai Bintang (Prioritas/Favorit)
-            </label>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input
-              type="checkbox"
-              id="is_public"
-              checked={form.is_public}
-              onChange={e => handleFormFieldChange('is_public', e.target.checked)}
-              style={{ accentColor: 'var(--purple-400)', width: '16px', height: '16px', cursor: 'pointer' }}
-            />
-            <label htmlFor="is_public" style={{ color: 'var(--text2)', fontSize: '13px', fontFamily: 'monospace', cursor: 'pointer' }}>
-              🔗 Jadikan writeup ini publik (Shareable)
-            </label>
-          </div>
-        </div>
-      </div>
+      </fieldset>
 
       {error && (
         <div style={{ background:'rgba(255,69,96,0.1)', border:'1px solid rgba(255,69,96,0.3)', borderRadius:'6px', padding:'10px 14px', color:'var(--red)', fontSize:'13px', marginBottom:'16px', fontFamily:'monospace' }}>
@@ -800,12 +984,14 @@ export default function WriteupForm({ initial }: Props) {
       <div style={{ display:'flex', gap:'10px' }}>
         <button type="button" onClick={() => router.back()}
           style={{ padding:'10px 20px', borderRadius:'6px', border:'1px solid var(--border)', background:'transparent', color:'var(--text2)', cursor:'pointer', fontFamily:'monospace', fontSize:'13px' }}>
-          Cancel
+          {teamRole === 'viewer' ? 'Kembali' : 'Cancel'}
         </button>
-        <button type="submit" disabled={saving}
-          style={{ padding:'10px 28px', borderRadius:'6px', border:'none', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'13px', opacity: saving ? 0.7 : 1 }}>
-          {saving ? '// Saving...' : isEdit ? '// Update Writeup' : '// Save Writeup'}
-        </button>
+        {teamRole !== 'viewer' && (
+          <button type="submit" disabled={saving}
+            style={{ padding:'10px 28px', borderRadius:'6px', border:'none', background:'var(--purple-600)', color:'#fff', cursor:'pointer', fontFamily:'monospace', fontSize:'13px', opacity: saving ? 0.7 : 1 }}>
+            {saving ? '// Saving...' : isEdit ? '// Update Writeup' : '// Save Writeup'}
+          </button>
+        )}
       </div>
     </form>
   )

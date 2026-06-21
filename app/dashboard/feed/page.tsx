@@ -78,7 +78,7 @@ export default function FeedPage() {
             if (!prev) return null
             const hasUpvoted = prev.has_upvoted === 1 ? 0 : 1
             const upvotes = hasUpvoted === 1 ? prev.upvotes + 1 : prev.upvotes - 1
-            return { ...prev, has_upvoted, upvotes }
+            return { ...prev, has_upvoted: hasUpvoted, upvotes }
           })
         }
       }

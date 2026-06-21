@@ -1,6 +1,10 @@
 import mysql from 'mysql2/promise'
 
-const pool = mysql.createPool({
+const globalForDb = globalThis as unknown as {
+  connPool: mysql.Pool | undefined
+}
+
+const pool = globalForDb.connPool ?? mysql.createPool({
   host:     process.env.DB_HOST     || 'localhost',
   port:     parseInt(process.env.DB_PORT || '3306'),
   user:     process.env.DB_USER     || 'root',
@@ -11,5 +15,7 @@ const pool = mysql.createPool({
   queueLimit:         0,
   charset:            'utf8mb4',
 })
+
+if (process.env.NODE_ENV !== 'production') globalForDb.connPool = pool
 
 export default pool

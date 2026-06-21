@@ -26,6 +26,7 @@ interface CVEFormProps {
   uploadingState: Record<string, boolean>
   fetchCveDetails: () => void
   fetchingCve: boolean
+  readOnly?: boolean
 }
 
 const POPULAR_CWES = [
@@ -54,7 +55,8 @@ export default function CVEForm({
   onImageUpload,
   uploadingState,
   fetchCveDetails,
-  fetchingCve
+  fetchingCve,
+  readOnly
 }: CVEFormProps) {
   const labelStyle = { display: 'block', fontSize: '11px', color: 'var(--text2)', marginBottom: '6px', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }
   const inputStyle = { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text)', fontSize: '13px', fontFamily: 'monospace', outline: 'none' }
@@ -194,25 +196,25 @@ export default function CVEForm({
       {/* Form Editors for CVE */}
       <div style={{ marginBottom: '18px' }}>
         <label style={labelStyle}>1. Vulnerability Description *</label>
-        <RichEditor value={form.content} onChange={val => onChange('content', val)} />
+        <RichEditor value={form.content} onChange={val => onChange('content', val)} readOnly={readOnly} />
         {renderUploadHelper('content')}
       </div>
 
       <div style={{ marginBottom: '18px' }}>
         <label style={labelStyle}>2. Technical Impact Assessment</label>
-        <RichEditor value={form.cve_impact} onChange={val => onChange('cve_impact', val)} />
+        <RichEditor value={form.cve_impact} onChange={val => onChange('cve_impact', val)} readOnly={readOnly} />
         {renderUploadHelper('cve_impact')}
       </div>
 
       <div style={{ marginBottom: '18px' }}>
         <label style={labelStyle}>3. Proof of Concept (PoC)</label>
-        <RichEditor value={form.cve_poc} onChange={val => onChange('cve_poc', val)} />
+        <RichEditor value={form.cve_poc} onChange={val => onChange('cve_poc', val)} readOnly={readOnly} />
         {renderUploadHelper('cve_poc')}
       </div>
 
       <div style={{ marginBottom: '24px' }}>
         <label style={labelStyle}>4. Remediation & Mitigation Plan</label>
-        <RichEditor value={form.cve_remediation} onChange={val => onChange('cve_remediation', val)} />
+        <RichEditor value={form.cve_remediation} onChange={val => onChange('cve_remediation', val)} readOnly={readOnly} />
         {renderUploadHelper('cve_remediation')}
       </div>
     </>

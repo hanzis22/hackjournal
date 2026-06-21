@@ -7,13 +7,14 @@ export default function CopyCodeHandler({ contentId }: { contentId: any }) {
     const timer = setTimeout(() => {
       const preBlocks = document.querySelectorAll('.writeup-content pre')
       
-      preBlocks.forEach((pre) => {
+      preBlocks.forEach((preElement) => {
+        const pre = preElement as HTMLElement
         // Hindari penumpukan tombol jika sudah ada
         if (pre.querySelector('.copy-code-btn')) return
 
         pre.style.position = 'relative'
         const code = pre.querySelector('code')
-        const textToCopy = code ? code.innerText : (pre as HTMLElement).innerText
+        const textToCopy = code ? code.innerText : pre.innerText
 
         const button = document.createElement('button')
         button.className = 'copy-code-btn'
